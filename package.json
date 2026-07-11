@@ -1,0 +1,24 @@
+{
+  "name": "dag-generator",
+  "version": "0.1.0",
+  "description": "Create, edit, and export causal DAGs and SWIGs — R-style formulas, informal HTML & manuscript TikZ styles, constrained two-way editing.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "dag": "src/cli/dag.mjs"
+  },
+  "scripts": {
+    "dev": "node src/server/index.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dag-generator</title>
+<link rel="stylesheet" href="/dg.css">
+</head>
+<body>
+<div id="dg-stage"></div>
+<script type="module">
+  import { mount } from '/app.mjs';
+  mount({ stage: document.getElementById('dg-stage') });
+</script>
+</body>
+</html>

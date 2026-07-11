@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>dag-generator — two-way editing spike (M0)</title>
+<style>
+  :root{
+    --dg-accent:#2e9e5b; --dg-accent-weak:#e6f5ec; --dg-accent-ink:#16613a;
+    --dg-ink:#1a1c22; --dg-muted:#6b7280; --dg-line:#d7dbe0; --dg-bg:#f6f7f9;
+    --dg-orange:#e07a1f; --dg-warn:#c0392b; --dg-mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       color:var(--dg-ink);background:var(--dg-bg)}
+  header{padding:14px 20px;border-bottom:1px solid var(--dg-line);background:#fff;
+         display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  header h1{margin:0;font-size:17px;font-weight:650}
+  header .tag{font-size:12px;color:#fff;background:var(--dg-accent);padding:2px 8px;border-radius:20px}
+  header p{margin:0;color:var(--dg-muted);font-size:13px}
+  .wrap{display:grid;grid-template-columns:minmax(360px,1fr) minmax(420px,1.2fr);gap:0;height:calc(100vh - 58px)}
+  .pane{display:flex;flex-direction:column;min-width:0}
+  .pane.left{border-right:1px solid var(--dg-line)}
+  .pane-h{padding:8px 14px;border-bottom:1px solid var(--dg-line);background:#fff;
+          font-size:12px;font-weight:600;color:var(--dg-muted);text-transform:uppercase;letter-spacing:.04em;
+          display:flex;align-items:center;justify-content:space-between}
+  .pane-h .who{font-weight:500;text-transform:none;letter-spacing:0;color:var(--dg-accent-ink)}
+  textarea{flex:1;border:0;outline:0;resize:none;padding:14px;font-family:var(--dg-mono);font-size:13px;
+           line-height:1.6;color:var(--dg-ink);background:#fff;tab-size:2}
+  .status{border-top:1px solid var(--dg-line);padding:8px 14px;font-size:12.5px;background:#fff;min-height:34px}
+  .status.ok{color:var(--dg-accent-ink)}
+  .status.warn{color:var(--dg-warn)}
+  .status code{font-family:var(--dg-mono);background:var(--dg-bg);padding:1px 5px;border-radius:4px}
+  .toolbar{padding:8px 14px;border-bottom:1px solid var(--dg-line);background:#fff;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  button{font:inherit;font-size:13px;border:1px solid var(--dg-line);background:#fff;border-radius:8px;
+         padding:5px 11px;cursor:pointer;color:var(--dg-ink)}
+  button:hover{border-color:var(--dg-accent);color:var(--dg-accent-ink);background:var(--dg-accent-weak)}
+  button.primary{background:var(--dg-accent);border-color:var(--dg-accent);color:#fff}
+  button.primary:hover{filter:brightness(.95)}
+  .canvas-host{flex:1;overflow:hidden;position:relative;background:
+     radial-gradient(circle,var(--dg-line) 1px,transparent 1px) 0 0/var(--dg-cell,80px) var(--dg-cell,80px);
+     background-color:#fff}
+  svg{width:100%;height:100%;display:block;touch-action:none}
+  .node-label{font-family:"Latin Modern Roman","Times New Roman",Georgia,serif;font-style:italic;
+              font-size:19px;fill:var(--dg-ink);user-select:none;dominant-baseline:middle;text-anchor:middle}
+  .node-hit{cursor:grab}
+  .node-hit:active{cursor:grabbing}
+  .hint{position:absolute;bottom:10px;left:12px;font-size:12px;color:var(--dg-muted);background:#ffffffcc;
+        padding:4px 8px;border-radius:6px;border:1px solid var(--dg-line);pointer-events:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>dag-generator</h1><span class="tag">M0 two-way spike</span>
+  <p>Edit the canonical TikZ on the left, or drag nodes on the right — they stay in sync. Nodes snap to the grid; only the canonical grammar is accepted.</p>
+</header>
+
+<div class="wrap">
+  <div class="pane left">
+    <div class="pane-h"><span>Canonical TikZ (source of truth)</span><span class="who" id="edited-by"></span></div>
+    <textarea id="tex" spellcheck="false"></textarea>
+    <div class="status ok" id="status">parsed ok</div>
+  </div>
+  <div class="pane">
+    <div class="pane-h"><span>Grid canvas</span><span class="who">drag = snap to grid</span></div>
+    <div class="toolbar">
+      <button class="primary" id="add">+ node</button>
+      <button id="reset">reset example</button>
+      <span style="font-size:12.5px;color:var(--dg-muted)">styles: <code style="font-family:var(--dg-mono)">rv</code> · <code style="font-family:var(--dg-mono)">cond</code> · <code style="font-family:var(--dg-mono)">unobs</code> · <code style="font-family:var(--dg-mono)">regime</code></span>
+    </div>
+    <div class="canvas-host" id="host">
+      <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="hint">y-axis points up (TikZ convention). Grid = integer coordinates.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var CELL = 80, PAD = 60;            // px per grid unit; padding around content
+  document.documentElement.style.setProperty('--dg-cell', CELL+'px');
+
+  var EXAMPLE = [
+    "% M0 spike — edit here, or drag nodes. Only these two line shapes are valid:",
+    "%   \\node[STYLE](ID) at (X,Y) {LABEL};   STYLE = rv|cond|unobs|regime",
+    "%   \\draw[STYLE] (A) to (B);            STYLE = causal|reads|cfedge",
+    "%   ...or  to[bend left=N]  /  to[bend right=N]",
+    "\\node[unobs](U) at (2,3) {$U$};",
+    "\\node[rv](L) at (1,2) {$L$};",
+    "\\node[rv](A) at (1,0) {$A$};",
+    "\\node[rv](M) at (3,0) {$M$};",
+    "\\node[rv](Y) at (5,0) {$Y$};",
+    "\\draw[causal] (L) to (A);",
+    "\\draw[causal] (L) to[bend left=20] (Y);",
+    "\\draw[causal] (A) to (M);",
+    "\\draw[causal] (M) to (Y);",
+    "\\draw[causal] (U) to (L);",
+    "\\draw[causal] (U) to[bend left=15] (Y);"
+  ].join("\n");
+
+  var NODE_STYLES = {rv:1, cond:1, unobs:1, regime:1};
+  var EDGE_STYLES = {causal:1, reads:1, cfedge:1, det:1, biasing:1, blocked:1};
+  var NODE_RE = /^\\node\[(\w+)\]\((\w+)\)\s*at\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)\s*\{(.*)\}\s*;$/;
+  var EDGE_RE = /^\\draw\[(\w+)\]\s*\((\w+)\)\s*to(?:\[bend (left|right)=(\d+)\])?\s*\((\w+)\)\s*;$/;
+
+  // ---- parse canonical TikZ -> model (+ list of flagged lines) ----
+  function parse(text){
+    var nodes = [], edges = [], flags = [];
+    text.split("\n").forEach(function(raw, i){
+      var line = raw.trim();
+      if(!line || line[0] === "%") return;
+      var m;
+      if((m = NODE_RE.exec(line))){
+        if(!NODE_STYLES[m[1]]){ flags.push({n:i+1, why:"unknown node style '"+m[1]+"'"}); return; }
+        nodes.push({id:m[2], style:m[1], x:+m[3], y:+m[4], label:m[5]});
+      } else if((m = EDGE_RE.exec(line))){
+        if(!EDGE_STYLES[m[1]]){ flags.push({n:i+1, why:"unknown edge style '"+m[1]+"'"}); return; }
+        edges.push({from:m[2], to:m[5], style:m[1], bend: m[3] ? (m[3]==="left"?1:-1)*(+m[4]) : 0});
+      } else {
+        flags.push({n:i+1, why:"unsupported construct"});
+      }
+    });
+    // drop edges whose endpoints don't exist, flag them
+    var ids = {}; nodes.forEach(function(nd){ ids[nd.id]=1; });
+    edges = edges.filter(function(e){
+      if(ids[e.from] && ids[e.to]) return true;
+      flags.push({n:"—", why:"edge references missing node ("+e.from+"→"+e.to+")"});
+      return false;
+    });
+    return {nodes:nodes, edges:edges, flags:flags};
+  }
+
+  // ---- model -> canonical TikZ (deterministic emit) ----
+  function emit(model){
+    var out = [
+      "% canonical TikZ — regenerated from the grid canvas",
+      "%   \\node[STYLE](ID) at (X,Y) {LABEL};   \\draw[STYLE] (A) to[bend left=N] (B);"
+    ];
+    model.nodes.forEach(function(nd){
+      out.push("\\node["+nd.style+"]("+nd.id+") at ("+fmt(nd.x)+","+fmt(nd.y)+") {"+nd.label+"};");
+    });
+    model.edges.forEach(function(e){
+      var bend = e.bend ? "[bend "+(e.bend>0?"left":"right")+"="+Math.abs(e.bend)+"]" : "";
+      out.push("\\draw["+e.style+"] ("+e.from+") to"+bend+" ("+e.to+");");
+    });
+    return out.join("\n");
+  }
+  function fmt(v){ return (Math.round(v*100)/100).toString(); }
+
+  // ---- geometry ----
+  function extents(model){
+    if(!model.nodes.length) return {minx:0,maxx:4,miny:0,maxy:3};
+    var xs = model.nodes.map(function(n){return n.x;}), ys = model.nodes.map(function(n){return n.y;});
+    return {minx:Math.min.apply(0,xs), maxx:Math.max.apply(0,xs),
+            miny:Math.min.apply(0,ys), maxy:Math.max.apply(0,ys)};
+  }
+  var view = {ox:0, oy:0, ex:null};
+  function toPx(x,y){ return {px: view.ox + x*CELL, py: view.oy - y*CELL}; }
+  function toGrid(px,py){ return {x: Math.round((px - view.ox)/CELL), y: Math.round((view.oy - py)/CELL)}; }
+
+  // ---- render model -> SVG ----
+  var svg = document.getElementById("svg"), host = document.getElementById("host");
+  var current = null;               // live model
+  var nodePx = {};                  // id -> {px,py} for edge routing + hit-test
+
+  function render(model){
+    current = model;
+    var ex = extents(model); view.ex = ex;
+    var w = host.clientWidth, h = host.clientHeight;
+    var contentW = (ex.maxx-ex.minx)*CELL, contentH = (ex.maxy-ex.miny)*CELL;
+    view.ox = Math.max(PAD, (w - contentW)/2) - ex.minx*CELL;
+    view.oy = Math.max(PAD, (h - contentH)/2) + ex.maxy*CELL;
+    nodePx = {};
+    model.nodes.forEach(function(nd){ nodePx[nd.id] = toPx(nd.x, nd.y); });
+
+    var parts = ['<defs>'
+      + marker("arrow-causal", "#555")
+      + marker("arrow-reads", "#e07a1f")
+      + marker("arrow-cfedge", "#e07a1f")
+      + '</defs>'];
+
+    model.edges.forEach(function(e){ parts.push(edgeSVG(e)); });
+    model.nodes.forEach(function(nd){ parts.push(nodeSVG(nd)); });
+    svg.innerHTML = parts.join("");
+    bindDrag();
+  }
+  function marker(id,color){
+    return '<marker id="'+id+'" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+         + '<path d="M0,0 L10,5 L0,10 z" fill="'+color+'"/></marker>';
+  }
+  var R = 18; // node radius for edge trimming (px)
+  function edgeSVG(e){
+    var a = nodePx[e.from], b = nodePx[e.to];
+    var col = e.style==="reads" ? "#e07a1f" : e.style==="cfedge" ? "#e07a1f" : "#555";
+    var dash = (e.style==="reads"||e.style==="blocked") ? ' stroke-dasharray="6 4"' : "";
+    var mk = e.style==="reads" ? "arrow-reads" : e.style==="cfedge" ? "arrow-cfedge" : "arrow-causal";
+    var dx=b.px-a.px, dy=b.py-a.py, len=Math.hypot(dx,dy)||1, ux=dx/len, uy=dy/len;
+    var ax=a.px+ux*R, ay=a.py+uy*R, bx=b.px-ux*R, by=b.py-uy*R;
+    var d;
+    if(e.bend){
+      // control point perpendicular to the chord, magnitude ~ bend angle
+      var mx=(ax+bx)/2, my=(ay+by)/2, k=Math.tan((e.bend*Math.PI/180)/2);
+      var cx=mx - uy*len*k*0.5, cy=my + ux*len*k*0.5;
+      d = "M"+ax+","+ay+" Q"+cx+","+cy+" "+bx+","+by;
+    } else {
+      d = "M"+ax+","+ay+" L"+bx+","+by;
+    }
+    return '<path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="1.6"'+dash+' marker-end="url(#'+mk+')"/>';
+  }
+  function nodeSVG(nd){
+    var p = nodePx[nd.id], lab = tex2disp(nd.label), g = '<g class="node-hit" data-id="'+nd.id+'">';
+    if(nd.style==="cond"){
+      g += '<rect x="'+(p.px-16)+'" y="'+(p.py-15)+'" width="32" height="30" rx="2" fill="#fff" stroke="#1a1c22" stroke-width="1.4"/>';
+    } else if(nd.style==="regime"){
+      g += '<polygon points="'+p.px+','+(p.py-18)+' '+(p.px+22)+','+p.py+' '+p.px+','+(p.py+18)+' '+(p.px-22)+','+p.py+'" fill="#fff" stroke="#e07a1f" stroke-width="1.5"/>';
+    } else {
+      g += '<circle cx="'+p.px+'" cy="'+p.py+'" r="'+R+'" fill="#fff" opacity="0"/>'; // invisible hit area
+    }
+    var fill = nd.style==="unobs" ? "#8a8f98" : nd.style==="regime" ? "#e07a1f" : "#1a1c22";
+    g += '<text class="node-label" x="'+p.px+'" y="'+(p.py+1)+'" fill="'+fill+'">'+lab+'</text>';
+    return g + '</g>';
+  }
+  // minimal $..$ / subscript display for the spike
+  function tex2disp(s){
+    s = s.replace(/^\$/,"").replace(/\$$/,"").replace(/\\boldsymbol\{([^}]*)\}/g,"$1");
+    s = s.replace(/_\{([^}]*)\}/g,"<tspan baseline-shift='sub' font-size='0.7em'>$1</tspan>")
+         .replace(/_(\w)/g,"<tspan baseline-shift='sub' font-size='0.7em'>$1</tspan>")
+         .replace(/\^\{([^}]*)\}/g,"<tspan baseline-shift='super' font-size='0.7em'>$1</tspan>");
+    return s;
+  }
+
+  // ---- drag: canvas -> model -> textarea ----
+  var drag = null;
+  function bindDrag(){
+    Array.prototype.forEach.call(svg.querySelectorAll(".node-hit"), function(g){
+      g.addEventListener("pointerdown", function(ev){
+        ev.preventDefault();
+        var id = g.getAttribute("data-id");
+        drag = {id:id, node: current.nodes.find(function(n){return n.id===id;})};
+        g.setPointerCapture(ev.pointerId);
+      });
+    });
+  }
+  svg.addEventListener("pointermove", function(ev){
+    if(!drag) return;
+    var r = svg.getBoundingClientRect();
+    var gpos = toGrid(ev.clientX - r.left, ev.clientY - r.top);
+    if(gpos.x !== drag.node.x || gpos.y !== drag.node.y){
+      drag.node.x = gpos.x; drag.node.y = gpos.y;
+      render(current);                       // re-render live
+      pushToTextarea(current, "canvas");     // keep TikZ in sync
+    }
+  });
+  svg.addEventListener("pointerup", function(){ drag = null; });
+  svg.addEventListener("pointercancel", function(){ drag = null; });
+
+  // ---- textarea -> model -> canvas ----
+  var tex = document.getElementById("tex"), statusEl = document.getElementById("status"),
+      editedBy = document.getElementById("edited-by");
+  var typing = false, tId = null;
+  function pushToTextarea(model, who){
+    typing = false;
+    tex.value = emit(model);
+    editedBy.textContent = "↻ regenerated from " + who;
+    setStatus(model.flags);
+  }
+  function setStatus(flags){
+    if(!flags || !flags.length){ statusEl.className="status ok"; statusEl.textContent = "parsed ok — "+ (current?current.nodes.length:0) +" nodes, "+(current?current.edges.length:0)+" edges"; return; }
+    statusEl.className = "status warn";
+    statusEl.innerHTML = flags.map(function(f){ return "line "+f.n+": "+f.why; }).join(" · ");
+  }
+  tex.addEventListener("input", function(){
+    typing = true; editedBy.textContent = "✎ editing TikZ";
+    clearTimeout(tId);
+    tId = setTimeout(function(){
+      var model = parse(tex.value);
+      render(model);
+      setStatus(model.flags);
+    }, 220);
+  });
+
+  document.getElementById("reset").addEventListener("click", function(){
+    tex.value = EXAMPLE; var m = parse(EXAMPLE); render(m); setStatus(m.flags); editedBy.textContent="";
+  });
+  document.getElementById("add").addEventListener("click", function(){
+    var ex = extents(current);
+    var id = "N" + (current.nodes.length+1);
+    current.nodes.push({id:id, style:"rv", x: ex.maxx+1, y: 0, label:"$"+id+"$"});
+    render(current); pushToTextarea(current, "canvas");
+  });
+
+  // boot
+  window.addEventListener("resize", function(){ if(current) render(current); });
+  tex.value = EXAMPLE;
+  var m0 = parse(EXAMPLE); render(m0); setStatus(m0.flags);
+})();
+</script>
+</body>
+</html>

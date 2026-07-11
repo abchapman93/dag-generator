@@ -1,0 +1,33 @@
+% ============================================================================
+%  dag-generator — named TikZ styles (the canonical visual grammar).
+%  Adapted from the SSVF/HUD-VASH methods supplement
+%  (paper1-ssvf-hudvash/tex/tikz-causal-styles.tex). \input once after
+%  \usepackage{tikz}. Figures use ONLY these named styles so the whole document
+%  restyles from one place — and so the round-trip parser has a fixed grammar.
+% ============================================================================
+\usetikzlibrary{positioning, arrows.meta, fit, backgrounds,
+                decorations.pathreplacing, calc, shapes.geometric}
+\tikzset{
+  % --- Nodes ---------------------------------------------------------------
+  rv/.style     = {inner sep=2pt, minimum size=6mm},                 % random var: bare label
+  cond/.style   = {draw, rectangle, inner sep=3.5pt, minimum size=7mm}, % conditioning box
+  unobs/.style  = {text=gray!60!black, inner sep=2pt, minimum size=6mm}, % unobserved
+  regime/.style = {draw=orange, text=orange, diamond, aspect=1.5,
+                   inner sep=1pt, minimum size=6mm},                 % SWIG regime node
+  fixed/.style  = {text=orange, inner sep=3pt, minimum size=6mm},    % set value (intervened)
+  % --- Edges ---------------------------------------------------------------
+  causal/.style = {-Latex},                                          % ordinary causal arrow
+  det/.style    = {-Latex, double, double distance=1pt},             % deterministic relation
+  reads/.style  = {-Latex, orange, dashed},                          % regime reads a var
+  cfedge/.style = {-Latex, orange},                                  % regime -> cf descendant
+  biasing/.style= {-Latex, red!70!black},                            % highlighted biasing path
+  blocked/.style= {-Latex, gray, dashed},                            % blocked path
+  bidirected/.style = {Latex-Latex, dashed, gray!60!black},          % unobserved common cause
+  splitline/.style  = {orange, thick},                               % the node-split bar
+}
+% Counterfactual superscript marker (orange s), matching Y_t^s notation.
+\providecommand{\cfs}{{\color{orange}s}}
+% Node-split bar for SWIGs: \splitbar{<node>} draws a vertical orange bar at the
+% node's right edge; place the regime node immediately to its right.
+\providecommand{\splitbar}[1]{%
+  \draw[splitline] ([yshift=3.5mm]#1.east) -- ([yshift=-3.5mm]#1.east);}
