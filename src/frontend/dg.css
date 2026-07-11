@@ -33,6 +33,11 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 .dg-edge{cursor:pointer}
 .dg-hint{position:absolute;bottom:12px;left:14px;font-size:12.5px;color:var(--dg-orange);background:#fff8f0cc;padding:3px 9px;border-radius:6px;pointer-events:none}
 .dg-hint:empty{display:none}
+.dg-zoom{position:absolute;bottom:12px;right:14px;display:flex;align-items:center;gap:2px;background:#fff;border:1px solid var(--dg-line);border-radius:9px;box-shadow:0 2px 10px #0001;padding:3px}
+.dg-zoom button{font:inherit;font-size:16px;line-height:1;width:28px;height:26px;border:0;background:none;border-radius:6px;cursor:pointer;color:var(--dg-ink)}
+.dg-zoom button:hover{background:var(--dg-accent-weak);color:var(--dg-accent-ink)}
+.dg-zoom-label{font-size:11.5px;color:var(--dg-muted);min-width:40px;text-align:center;cursor:pointer;user-select:none}
+.dg-zoom-label:hover{color:var(--dg-accent-ink)}
 
 .dg-side{width:340px;flex-shrink:0;border-left:1px solid var(--dg-line);background:#fff;display:flex;flex-direction:column;min-height:0;transition:width .24s ease}
 .side-collapsed .dg-side{width:0;border-left:0;overflow:hidden}

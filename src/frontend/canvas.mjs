@@ -33,6 +33,7 @@ export function createCanvas(host, cbs) {
   let mode = 'select';       // 'select' | 'addEdge'
   let edgeFrom = null;       // pending source in addEdge mode
   let drag = null;
+  let zoom = 1, pan = { x: 0, y: 0 }, panning = null;   // view transform (zoom + drag-to-pan)
 
   function fit(m) {
     const ns = m.nodes;
@@ -79,15 +80,18 @@ export function createCanvas(host, cbs) {
 
   function render() {
     if (!view) fit(model);
-    const w = (view.maxx - view.minx) * CELL, h = (view.maxy - view.miny) * CELL;
-    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    const baseW = (view.maxx - view.minx) * CELL, baseH = (view.maxy - view.miny) * CELL;
+    // zoom shrinks the viewBox (content scales up); pan offsets it. Centered.
+    const vw = baseW / zoom, vh = baseH / zoom;
+    const vx = baseW / 2 - vw / 2 + pan.x, vy = baseH / 2 - vh / 2 + pan.y;
+    svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
 
     const pos = {};
     model.nodes.forEach((n) => (pos[n.id] = { x: gx2px(n.x), y: gy2px(n.y) }));
     const used = new Set(model.edges.map((e) => e.style));
 
     let s = `<defs>${[...used].map((st) => marker(st)).join('')}</defs>`;
-    s += grid(w, h);
+    s += grid();
     model.edges.forEach((e, i) => { s += edgeSVG(e, i, pos); });
     model.nodes.forEach((n) => { s += nodeSVG(n, pos[n.id]); });
     svg.innerHTML = s;
@@ -95,7 +99,7 @@ export function createCanvas(host, cbs) {
     cbs.onStatus?.(mode, edgeFrom);
   }
 
-  function grid(w, h) {
+  function grid() {
     let dots = '';
     for (let gx = Math.ceil(view.minx); gx <= Math.floor(view.maxx); gx++)
       for (let gy = Math.ceil(view.miny); gy <= Math.floor(view.maxy); gy++)
@@ -187,25 +191,49 @@ export function createCanvas(host, cbs) {
   }
 
   svg.addEventListener('pointermove', (ev) => {
-    if (!drag) return;
-    const g = px2grid(ev.clientX, ev.clientY);
-    const n = model.nodes.find((x) => x.id === drag.id);
-    if (n && (n.x !== g.x || n.y !== g.y)) { n.x = g.x; n.y = g.y; drag.moved = true; render(); cbs.onChange?.(); }
+    if (drag) {
+      const g = px2grid(ev.clientX, ev.clientY);
+      const n = model.nodes.find((x) => x.id === drag.id);
+      if (n && (n.x !== g.x || n.y !== g.y)) { n.x = g.x; n.y = g.y; drag.moved = true; render(); cbs.onChange?.(); }
+      return;
+    }
+    if (panning) {
+      pan.x = panning.px - (ev.clientX - panning.sx) / panning.a;
+      pan.y = panning.py - (ev.clientY - panning.sy) / panning.d;
+      render();
+    }
   });
-  svg.addEventListener('pointerup', () => { drag = null; });
-  svg.addEventListener('pointercancel', () => { drag = null; });
-  svg.addEventListener('pointerdown', () => {
+  const endGesture = () => { drag = null; if (panning) { panning = null; svg.style.cursor = ''; } };
+  svg.addEventListener('pointerup', endGesture);
+  svg.addEventListener('pointercancel', endGesture);
+  // Empty-canvas press: deselect, then drag to pan.
+  svg.addEventListener('pointerdown', (ev) => {
     if (mode === 'addEdge') return;
-    if (selection) { selection = null; render(); cbs.onSelect?.(null); }
+    if (selection) { selection = null; cbs.onSelect?.(null); }
+    const ctm = svg.getScreenCTM();
+    panning = { sx: ev.clientX, sy: ev.clientY, px: pan.x, py: pan.y, a: ctm.a, d: ctm.d };
+    svg.setPointerCapture(ev.pointerId);
+    svg.style.cursor = 'grabbing';
+    render();
   });
+  // Wheel to zoom (centered).
+  svg.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    setZoom(zoom * (ev.deltaY < 0 ? 1.12 : 1 / 1.12));
+  }, { passive: false });
+
+  function setZoom(z) { zoom = Math.min(6, Math.max(0.25, z)); render(); cbs.onZoom?.(zoom); }
 
   // ---- public API ----
   return {
-    setModel(m, { refit = true } = {}) { model = m; if (refit) fit(m); render(); },
+    setModel(m, { refit = true } = {}) { model = m; if (refit) { fit(m); zoom = 1; pan = { x: 0, y: 0 }; } render(); },
     setStyle(s) { style = s; render(); },
     setMode(m) { mode = m; edgeFrom = null; render(); cbs.onModeChange?.(mode); },
     getMode() { return mode; },
-    refit() { fit(model); render(); },
+    refit() { fit(model); zoom = 1; pan = { x: 0, y: 0 }; render(); cbs.onZoom?.(zoom); },
+    zoomIn() { setZoom(zoom * 1.25); },
+    zoomOut() { setZoom(zoom / 1.25); },
+    getZoom() { return zoom; },
     rerender() { render(); },
     getSelection() { return selection; },
     clearSelection() { selection = null; render(); cbs.onSelect?.(null); },

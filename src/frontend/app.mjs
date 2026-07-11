@@ -30,6 +30,7 @@ export function mount({ stage }) {
         ? (from ? `click the target node (source: ${from})` : 'click the source node')
         : '';
     },
+    onZoom: (z) => { $('.dg-zoom-label').textContent = Math.round(z * 100) + '%'; },
   });
   canvas.setModel(model);
 
@@ -78,6 +79,9 @@ export function mount({ stage }) {
   });
   $('[data-act=del]').addEventListener('click', () => canvas.deleteSelection());
   $('[data-act=fit]').addEventListener('click', () => canvas.refit());
+  $('[data-act=zoomIn]').addEventListener('click', () => canvas.zoomIn());
+  $('[data-act=zoomOut]').addEventListener('click', () => canvas.zoomOut());
+  $('.dg-zoom-label').addEventListener('click', () => canvas.refit());
   $('[data-act=relayout]').addEventListener('click', () => { layout(model); canvas.setModel(model, { refit: true }); regenPanels(); });
 
   document.addEventListener('keydown', (e) => {
@@ -230,6 +234,11 @@ const TEMPLATE = `
     <div class="dg-canvas-wrap">
       <div class="dg-canvas-host"></div>
       <div class="dg-hint"></div>
+      <div class="dg-zoom">
+        <button data-act="zoomIn" title="Zoom in">+</button>
+        <span class="dg-zoom-label" title="Reset zoom" data-act="zoomFit">100%</span>
+        <button data-act="zoomOut" title="Zoom out">&minus;</button>
+      </div>
     </div>
     <aside class="dg-side">
       <div class="dg-side-tabs" role="tablist">
