@@ -61,3 +61,9 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 .dg-muted{color:var(--dg-muted);font-size:12px}
 .dg-swig-btn{width:100%;margin-top:6px;border-color:#f0c9a0;color:var(--dg-orange)}
 .dg-swig-btn:hover{background:#fff8f0;border-color:var(--dg-orange);color:var(--dg-orange)}
+.dg-revert{border-color:#c9d9f6;color:var(--dg-blue)}
+.dg-revert:hover{background:#eef3fe;border-color:var(--dg-blue);color:var(--dg-blue)}
+.dg-arc{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
+.dg-arc button{font:inherit;font-size:14px;line-height:1;width:30px;height:26px;border:1px solid var(--dg-line);background:#fff;border-radius:6px;cursor:pointer;color:var(--dg-ink)}
+.dg-arc button:hover{border-color:var(--dg-accent);background:var(--dg-accent-weak);color:var(--dg-accent-ink)}
+.dg-arc input{width:54px;flex:0 0 auto}

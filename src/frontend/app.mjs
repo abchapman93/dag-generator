@@ -10,7 +10,7 @@ import { layout } from '/engine/layout.mjs';
 import { toSVG } from '/engine/svg.mjs';
 import { toHTML } from '/engine/html.mjs';
 import { intervene } from '/engine/swig.mjs';
-import { NODE_STYLES, EDGE_STYLES, ROLES } from '/engine/model.mjs';
+import { NODE_STYLES, EDGE_STYLES, ROLES, cloneModel } from '/engine/model.mjs';
 import { createCanvas } from '/canvas.mjs';
 
 const START = 'exposure: A\noutcome: Y\nconfounder: L\nunmeasured: U\nY ~ A + L + U\nA ~ L + U';
@@ -20,9 +20,13 @@ export function mount({ stage }) {
   const $ = (sel) => stage.querySelector(sel);
   let model = layout(formula.parse(START).model);
   let renderStyle = 'informal';
+  let preLayout = null;  // snapshot for one-step "revert layout"
+
+  function showRevert(on) { const b = $('[data-act=revert]'); if (b) b.hidden = !on; }
+  function invalidateRevert() { if (preLayout) { preLayout = null; showRevert(false); } }
 
   const canvas = createCanvas($('.dg-canvas-host'), {
-    onChange: () => { regenPanels(); status('ok'); },
+    onChange: () => { regenPanels(); status('ok'); renderInspector(canvas.getSelection()); invalidateRevert(); },
     onSelect: (sel) => renderInspector(sel),
     onModeChange: (m) => { $('[data-act=addEdge]').classList.toggle('on', m === 'addEdge'); },
     onStatus: (m, from) => {
@@ -50,6 +54,7 @@ export function mount({ stage }) {
       regenPanels(key);
       status(flags.length ? 'warn' : 'ok', flags);
       renderInspector(canvas.getSelection());
+      invalidateRevert();
     }, 240));
   });
 
@@ -65,14 +70,14 @@ export function mount({ stage }) {
     model.meta.style = renderStyle;
     canvas.setStyle(renderStyle);
     e.target.textContent = renderStyle === 'informal' ? 'Style: Informal' : 'Style: Manuscript';
-    regenPanels();
+    regenPanels(); invalidateRevert();
   });
   $('[data-act=addNode]').addEventListener('click', () => {
     const ids = new Set(model.nodes.map((n) => n.id));
     let i = 1, id; do { id = 'V' + i++; } while (ids.has(id));
     const maxx = model.nodes.length ? Math.max(...model.nodes.map((n) => n.x)) : 0;
     model.nodes.push({ id, label: `$${id}$`, x: maxx + 2, y: 0, style: 'rv' });
-    canvas.setModel(model, { refit: true }); regenPanels(); status('ok');
+    canvas.setModel(model, { refit: true }); regenPanels(); status('ok'); invalidateRevert();
   });
   $('[data-act=addEdge]').addEventListener('click', () => {
     canvas.setMode(canvas.getMode() === 'addEdge' ? 'select' : 'addEdge');
@@ -82,7 +87,17 @@ export function mount({ stage }) {
   $('[data-act=zoomIn]').addEventListener('click', () => canvas.zoomIn());
   $('[data-act=zoomOut]').addEventListener('click', () => canvas.zoomOut());
   $('.dg-zoom-label').addEventListener('click', () => canvas.refit());
-  $('[data-act=relayout]').addEventListener('click', () => { layout(model); canvas.setModel(model, { refit: true }); regenPanels(); });
+  $('[data-act=relayout]').addEventListener('click', () => {
+    preLayout = cloneModel(model);
+    layout(model); canvas.setModel(model, { refit: true }); regenPanels();
+    showRevert(true); status('ok', null, 'auto-laid out — “revert” to undo');
+  });
+  $('[data-act=revert]').addEventListener('click', () => {
+    if (!preLayout) return;
+    model = preLayout; preLayout = null; model.meta.style = renderStyle;
+    canvas.setModel(model, { refit: true }); regenPanels();
+    showRevert(false); status('ok', null, 'layout reverted');
+  });
 
   document.addEventListener('keydown', (e) => {
     if ((e.key === 'Delete' || e.key === 'Backspace') && !isTyping(e)) { e.preventDefault(); canvas.deleteSelection(); }
@@ -145,31 +160,40 @@ export function mount({ stage }) {
         <p class="dg-muted">pos (${n.x}, ${n.y})</p>
         <button class="dg-btn dg-swig-btn" id="i-intervene">⋔ Intervene → SWIG</button>`;
       $('#i-id').addEventListener('change', (e) => renameNode(n.id, e.target.value.trim()));
-      $('#i-label').addEventListener('input', (e) => { n.label = e.target.value; canvas.rerender(); regenPanels(); });
-      $('#i-style').addEventListener('change', (e) => { n.style = e.target.value; canvas.rerender(); regenPanels(); });
-      $('#i-role').addEventListener('change', (e) => { const v = e.target.value; if (v === '(none)') delete n.role; else n.role = v; canvas.rerender(); regenPanels(); });
+      $('#i-label').addEventListener('input', (e) => { n.label = e.target.value; canvas.rerender(); regenPanels(); invalidateRevert(); });
+      $('#i-style').addEventListener('change', (e) => { n.style = e.target.value; canvas.rerender(); regenPanels(); invalidateRevert(); });
+      $('#i-role').addEventListener('change', (e) => { const v = e.target.value; if (v === '(none)') delete n.role; else n.role = v; canvas.rerender(); regenPanels(); invalidateRevert(); });
       $('#i-intervene').addEventListener('click', () => {
         model = intervene(model, n.id); model.meta.style = renderStyle;
         canvas.setModel(model, { refit: true }); canvas.clearSelection();
-        regenPanels(); renderInspector(null); status('ok', null, 'SWIG: split treatment into regime node');
+        regenPanels(); renderInspector(null); invalidateRevert(); status('ok', null, 'SWIG: split treatment into regime node');
       });
     } else {
       const e = model.edges[sel.index]; if (!e) { box.innerHTML = ''; return; }
       box.innerHTML = `
         <h4>Edge <span class="dg-muted">${esc(e.from)} → ${esc(e.to)}</span></h4>
         ${field('style', select('e-style', EDGE_STYLES, e.style))}
-        ${field('bend', `<input id="e-bend" type="number" step="5" value="${e.bend}"> <span class="dg-muted">+left / −right</span>`)}`;
-      $('#e-style').addEventListener('change', (ev) => { e.style = ev.target.value; canvas.rerender(); regenPanels(); });
-      $('#e-bend').addEventListener('input', (ev) => { e.bend = parseInt(ev.target.value, 10) || 0; canvas.rerender(); regenPanels(); });
+        <label class="dg-field"><span>arc</span><span class="dg-arc">
+          <button data-arc="30" title="arc left">⤴</button>
+          <button data-arc="0" title="straight">—</button>
+          <button data-arc="-30" title="arc right">⤵</button>
+          <input id="e-bend" type="number" step="5" value="${e.bend}" title="+left / −right (degrees)">
+        </span></label>
+        <p class="dg-muted">…or drag the edge on the canvas to arc it.</p>`;
+      $('#e-style').addEventListener('change', (ev) => { e.style = ev.target.value; canvas.rerender(); regenPanels(); invalidateRevert(); });
+      $('#e-bend').addEventListener('input', (ev) => { e.bend = parseInt(ev.target.value, 10) || 0; canvas.rerender(); regenPanels(); invalidateRevert(); });
+      box.querySelectorAll('[data-arc]').forEach((b) => b.addEventListener('click', () => {
+        e.bend = parseInt(b.dataset.arc, 10); canvas.rerender(); regenPanels(); invalidateRevert(); renderInspector(sel);
+      }));
     }
   }
 
   function renameNode(oldId, newId) {
-    if (!newId || newId === oldId || model.nodes.some((n) => n.id === newId)) { canvas.rerender(); return; }
+    if (!newId || newId === oldId || model.nodes.some((n) => n.id === newId)) { renderInspector(canvas.getSelection()); return; }
     model.nodes.forEach((n) => { if (n.id === oldId) n.id = newId; });
     model.edges.forEach((e) => { if (e.from === oldId) e.from = newId; if (e.to === oldId) e.to = newId; });
     if (model.swig) model.swig.interventions.forEach((iv) => { if (iv.node === oldId) iv.node = newId; });
-    canvas.clearSelection(); canvas.rerender(); regenPanels();
+    regenPanels(); invalidateRevert(); canvas.selectNode(newId);  // keep the node's edit menu open
   }
 
   // ---- helpers ----
@@ -211,6 +235,7 @@ const TEMPLATE = `
     <button class="dg-btn" data-act="addEdge">+ edge</button>
     <button class="dg-btn" data-act="del">delete</button>
     <button class="dg-btn" data-act="relayout">auto-layout</button>
+    <button class="dg-btn dg-revert" data-act="revert" hidden>↶ revert</button>
     <button class="dg-btn" data-act="fit">fit</button>
     <span class="dg-sep"></span>
     <details class="dg-export">

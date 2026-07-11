@@ -32,8 +32,9 @@ export function createCanvas(host, cbs) {
   let selection = null;      // { type:'node'|'edge', id|index }
   let mode = 'select';       // 'select' | 'addEdge'
   let edgeFrom = null;       // pending source in addEdge mode
-  let drag = null;
+  let drag = null, edgeDrag = null;
   let zoom = 1, pan = { x: 0, y: 0 }, panning = null;   // view transform (zoom + drag-to-pan)
+  const capture = (el, id) => { try { el.setPointerCapture(id); } catch { /* no active pointer */ } };
 
   function fit(m) {
     const ns = m.nodes;
@@ -166,7 +167,7 @@ export function createCanvas(host, cbs) {
         if (mode === 'addEdge') { handleEdgePick(id); return; }
         selection = { type: 'node', id };
         drag = { id, moved: false };
-        g.setPointerCapture(ev.pointerId);
+        capture(g, ev.pointerId);
         render(); cbs.onSelect?.(selection);
       });
     });
@@ -174,7 +175,10 @@ export function createCanvas(host, cbs) {
       g.addEventListener('pointerdown', (ev) => {
         if (mode === 'addEdge') return;
         ev.stopPropagation();
-        selection = { type: 'edge', index: +g.getAttribute('data-edge') };
+        const index = +g.getAttribute('data-edge');
+        selection = { type: 'edge', index };
+        edgeDrag = { index };                 // click = select; drag = arc
+        capture(svg, ev.pointerId);
         render(); cbs.onSelect?.(selection);
       });
     });
@@ -197,13 +201,28 @@ export function createCanvas(host, cbs) {
       if (n && (n.x !== g.x || n.y !== g.y)) { n.x = g.x; n.y = g.y; drag.moved = true; render(); cbs.onChange?.(); }
       return;
     }
+    if (edgeDrag) {
+      const e = model.edges[edgeDrag.index];
+      const na = model.nodes.find((n) => n.id === e.from), nb = model.nodes.find((n) => n.id === e.to);
+      if (!na || !nb) return;
+      const ax = gx2px(na.x), ay = gy2px(na.y), bx = gx2px(nb.x), by = gy2px(nb.y);
+      const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+      const u = pt.matrixTransform(svg.getScreenCTM().inverse());
+      const dperp = (u.x - mx) * (-uy) + (u.y - my) * ux;     // signed distance from chord
+      let bend = Math.round(2 * Math.atan((4 * dperp) / len) * 180 / Math.PI);
+      bend = Math.max(-80, Math.min(80, bend));
+      if (bend !== e.bend) { e.bend = bend; render(); cbs.onChange?.(); }
+      return;
+    }
     if (panning) {
       pan.x = panning.px - (ev.clientX - panning.sx) / panning.a;
       pan.y = panning.py - (ev.clientY - panning.sy) / panning.d;
       render();
     }
   });
-  const endGesture = () => { drag = null; if (panning) { panning = null; svg.style.cursor = ''; } };
+  const endGesture = () => { drag = null; edgeDrag = null; if (panning) { panning = null; svg.style.cursor = ''; } };
   svg.addEventListener('pointerup', endGesture);
   svg.addEventListener('pointercancel', endGesture);
   // Empty-canvas press: deselect, then drag to pan.
@@ -212,7 +231,7 @@ export function createCanvas(host, cbs) {
     if (selection) { selection = null; cbs.onSelect?.(null); }
     const ctm = svg.getScreenCTM();
     panning = { sx: ev.clientX, sy: ev.clientY, px: pan.x, py: pan.y, a: ctm.a, d: ctm.d };
-    svg.setPointerCapture(ev.pointerId);
+    capture(svg, ev.pointerId);
     svg.style.cursor = 'grabbing';
     render();
   });
@@ -236,6 +255,7 @@ export function createCanvas(host, cbs) {
     getZoom() { return zoom; },
     rerender() { render(); },
     getSelection() { return selection; },
+    selectNode(id) { if (model.nodes.some((n) => n.id === id)) { selection = { type: 'node', id }; render(); cbs.onSelect?.(selection); } },
     clearSelection() { selection = null; render(); cbs.onSelect?.(null); },
     deleteSelection() {
       if (!selection) return;
