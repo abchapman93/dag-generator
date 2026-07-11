@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# dag-generator — launch/open the dag-generator web app.
+#
+#   dag-generator            start it if not running, then open it in the browser
+#   dag-generator --restart  stop it if running, then start fresh and open it
+#   dag-generator --stop     just stop it
+#   dag-generator --status   report whether it's running
+#
+# Env overrides: DAG_GENERATOR_DIR (repo path), DAG_GENERATOR_PORT (default 4180).
+set -euo pipefail
+
+APP_DIR="${DAG_GENERATOR_DIR:-$HOME/Code/dag-generator}"
+PORT="${DAG_GENERATOR_PORT:-4180}"
+URL="http://127.0.0.1:${PORT}/"
+LOG="/tmp/dag-generator.log"
+PIDFILE="$APP_DIR/.server.pid"
+
+port_pids() { lsof -ti "tcp:${PORT}" -sTCP:LISTEN 2>/dev/null || true; }
+is_running() { [ -n "$(port_pids)" ]; }
+
+stop() {
+  local pids; pids="$(port_pids)"
+  if [ -z "$pids" ]; then echo "dag-generator is not running."; rm -f "$PIDFILE"; return 0; fi
+  echo "Stopping dag-generator (pid $(echo "$pids" | tr '\n' ' '))…"
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8; do is_running || break; sleep 0.3; done
+  pids="$(port_pids)"
+  # shellcheck disable=SC2086
+  [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+  rm -f "$PIDFILE"
+}
+
+start() {
+  if [ ! -f "$APP_DIR/src/server/index.mjs" ]; then
+    echo "Cannot find the app at $APP_DIR (set DAG_GENERATOR_DIR)." >&2; exit 1
+  fi
+  echo "Starting dag-generator on ${URL} …"
+  ( cd "$APP_DIR" && PORT="$PORT" nohup node src/server/index.mjs >"$LOG" 2>&1 & echo $! >"$PIDFILE" )
+  for _ in $(seq 1 40); do
+    if curl -fsS -o /dev/null "$URL" 2>/dev/null; then return 0; fi
+    sleep 0.25
+  done
+  echo "dag-generator did not become healthy in time — see $LOG" >&2
+  exit 1
+}
+
+open_app() {
+  if command -v open >/dev/null 2>&1; then open "$URL"; else echo "Open: $URL"; fi
+}
+
+case "${1:-}" in
+  --restart) stop; start; open_app ;;
+  --stop)    stop ;;
+  --status)  if is_running; then echo "running → $URL (pid $(port_pids | tr '\n' ' '))"; else echo "not running"; fi ;;
+  -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' ;;
+  "")        if is_running; then echo "Already running → $URL"; else start; fi; open_app ;;
+  *)         echo "unknown option: $1 (try --restart, --stop, --status)" >&2; exit 2 ;;
+esac
