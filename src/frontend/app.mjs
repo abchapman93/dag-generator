@@ -47,6 +47,7 @@ export function mount({ stage }) {
   let renderStyle = 'informal';
   let preLayout = null;  // snapshot for one-step "revert layout"
   let currentSlug = null, currentName = '';  // the open saved-config, if any
+  let loading = false, autosaveTimer = null; // autosave-to-current-config state
 
   function showRevert(on) { const b = $('[data-act=revert]'); if (b) b.hidden = !on; }
   function invalidateRevert() { if (preLayout) { preLayout = null; showRevert(false); } }
@@ -126,6 +127,7 @@ export function mount({ stage }) {
   });
 
   document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); newDag(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && !isTyping(e)) { e.preventDefault(); canvas.deleteSelection(); }
     if (e.key === 'Escape') canvas.setMode('select');
   });
@@ -140,7 +142,35 @@ export function mount({ stage }) {
   // ---- configs: save / open / delete ----
   function setCurrent(slug, name) {
     currentSlug = slug; currentName = name || '';
-    $('#dg-current').textContent = currentName ? `· ${currentName}` : '';
+    setDirty(false);
+  }
+  // Name chip; shows a "•" while edits are pending an auto-save.
+  function setDirty(pending) {
+    $('#dg-current').textContent = currentName ? `· ${currentName}${pending ? ' •' : ''}` : '';
+  }
+  // Auto-save the current model back to its config, debounced. No-ops when no
+  // config is open (nothing to save to) or while loading one.
+  function scheduleAutosave() {
+    if (loading || !currentSlug) return;
+    setDirty(true);
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(doAutosave, 800);
+  }
+  async function doAutosave() {
+    if (!currentSlug) return;
+    const slug = currentSlug, name = currentName;
+    model.meta.style = renderStyle; model.meta.title = name;
+    try {
+      const res = await fetch('/dag/api/configs', {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, model, slug }),
+      });
+      if (res.ok && slug === currentSlug) setDirty(false);
+    } catch { /* leave the • dot; a later edit retries */ }
+  }
+  // Persist any pending edits immediately (before switching/closing configs).
+  async function flushAutosave() {
+    if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; await doAutosave(); }
   }
   async function refreshConfigList() {
     const box = $('#cfg-list');
@@ -176,15 +206,18 @@ export function mount({ stage }) {
   async function openConfig(slug) {
     try {
       const cfg = await (await fetch(`/dag/api/configs/${slug}`)).json();
+      await flushAutosave();   // persist pending edits to the config we're leaving
+      loading = true;
       model = cfg.model;
       renderStyle = model.meta?.style || 'informal';
       $('[data-act=style]').textContent = renderStyle === 'informal' ? 'Style: Informal' : 'Style: Manuscript';
+      setCurrent(slug, cfg.name); $('#cfg-name').value = cfg.name;  // set BEFORE regen so autosave targets the right config
       canvas.setStyle(renderStyle); canvas.setModel(model, { refit: true });
       regenPanels(); renderInspector(null); invalidateRevert();
-      setCurrent(slug, cfg.name); $('#cfg-name').value = cfg.name;
       $('.dg-configs').open = false;
       status('ok', null, `opened “${cfg.name}”`);
     } catch (e) { status('warn', null, `open failed: ${e.message}`); }
+    finally { loading = false; }
   }
   async function deleteConfig(slug) {
     try {
@@ -193,14 +226,18 @@ export function mount({ stage }) {
       await refreshConfigList();
     } catch (e) { status('warn', null, `delete failed: ${e.message}`); }
   }
-  function newDag() {
-    if (model.nodes.length && !confirm('Start a new blank DAG? Any unsaved changes will be cleared.')) return;
+  async function newDag() {
+    // Only warn when there's untitled work to lose; open configs are auto-saved.
+    if (model.nodes.length && !currentSlug && !confirm('Start a new blank DAG? Unsaved changes will be cleared.')) return;
+    await flushAutosave();   // persist the config we're leaving, if any
+    loading = true;
     model = { meta: { kind: 'dag', style: renderStyle, title: '', nodeSep: 1 }, nodes: [], edges: [] };
+    setCurrent(null, ''); $('#cfg-name').value = '';
     canvas.setModel(model, { refit: true });
     regenPanels(); renderInspector(null); invalidateRevert();
-    setCurrent(null, ''); $('#cfg-name').value = '';
     $('.dg-configs').open = false;
     status('ok', null, 'new blank DAG — add nodes (+ node) or type a formula');
+    loading = false;
   }
   $('[data-cfg=new]').addEventListener('click', newDag);
   $('[data-cfg=save]').addEventListener('click', saveConfig);
@@ -327,6 +364,7 @@ export function mount({ stage }) {
       if (document.activeElement === p.el) continue;
       p.el.value = p.emit();
     }
+    scheduleAutosave();  // every mutation routes through here → auto-save to the open config
   }
   function status(kind, flags, msg) {
     const el = $('.dg-status');

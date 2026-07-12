@@ -48,7 +48,9 @@ tikz ────┘     (src/engine)             └─ pdf/svg/png   (LaTeX co
 ## Saving & exporting
 
 - **Configs** — the toolbar's `configs ▾` menu saves the current DAG to a named
-  registry and reopens/deletes saved ones. Configs live as JSON under
+  registry, reopens/deletes saved ones, and starts a blank DAG (`＋ New`, or
+  ⌘/Ctrl-N). Once a config is open, edits **auto-save** back to it (debounced; a
+  `•` on the name chip shows a pending save). Configs live as JSON under
   `~/.dag-generator/configs/` (override with `DAG_GENERATOR_DATA`); the directory
   listing *is* the registry. Served by `GET/PUT/DELETE /dag/api/configs`.
 - **Export destination** — `export ▾` uses the browser's native Save dialog
