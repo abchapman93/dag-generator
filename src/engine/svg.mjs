@@ -41,6 +41,9 @@ export function toSVG(model, opts = {}) {
 
   const edgeSVG = model.edges.map((e) => renderEdge(e, pos, nodes, mode)).join('\n');
   const nodeSVG = nodes.map((n) => renderNode(n, pos[n.id], mode)).join('\n');
+  const splitSVG = (model.swig?.interventions || [])
+    .map((iv) => renderSplitbar(pos[iv.node], pos[iv.regimeLabel]))
+    .join('\n');
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${round(W)} ${round(H)}" width="${round(W)}" height="${round(H)}" font-family="Georgia, 'Times New Roman', serif">`,
@@ -48,6 +51,7 @@ export function toSVG(model, opts = {}) {
     `<rect width="100%" height="100%" fill="${opts.background || 'transparent'}"/>`,
     edgeSVG,
     nodeSVG,
+    splitSVG,
     '</svg>',
   ].join('\n');
 }
@@ -132,6 +136,14 @@ function trim(p, ux, uy, v) {
 
 function nodeById(nodes, id) { return nodes.find((n) => n.id === id) || { style: 'rv' }; }
 
+// Vertical orange bar centered between the rv node and its fixed-value node,
+// marking the SWIG split (mirrors the 2-arg \splitbar in tikz/dag-styles.tex).
+function renderSplitbar(a, b) {
+  if (!a || !b) return '';
+  const x = round((a.x + b.x) / 2);
+  return `<line x1="${x}" y1="${round(a.y - 16)}" x2="${x}" y2="${round(a.y + 16)}" stroke="#e07a1f" stroke-width="2.2"/>`;
+}
+
 function marker(style, color) {
   return `<marker id="mk-${style}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${color}"/></marker>`;
 }
@@ -139,6 +151,7 @@ function marker(style, color) {
 // Minimal LaTeX-ish label -> SVG tspans (subscripts, superscripts, \boldsymbol).
 export function tex2disp(s) {
   s = String(s).replace(/^\$/, '').replace(/\$$/, '').replace(/\\boldsymbol\{([^}]*)\}/g, '$1').replace(/\\bar\{([^}]*)\}/g, '$1');
+  s = s.replace(/\\cfarg\{([^}]*)\}/g, "<tspan fill='#e07a1f'>$1</tspan>");
   s = s
     .replace(/\^\{([^}]*)\}/g, "<tspan baseline-shift='super' font-size='0.7em'>$1</tspan>")
     .replace(/\^(\w)/g, "<tspan baseline-shift='super' font-size='0.7em'>$1</tspan>")

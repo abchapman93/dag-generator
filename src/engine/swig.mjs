@@ -1,60 +1,108 @@
-// DAG -> SWIG transform. Intervening on a treatment node splits it into the
-// observed decision (kept) and a regime node (orange diamond); the regime reads
-// the treatment's determinants (dashed `reads` edges), pushes to the
-// counterfactual descendants (orange `cfedge`), and every descendant of the
-// split is relabelled counterfactual with a superscript. Reproduces the grammar
-// of swig-template.tex (basic form — one intervention; see fast-follows for
-// multi-regime and \cfs orange superscripts).
+// DAG -> SWIG transform (Richardson-Robins split-node style). Intervening on a
+// treatment node draws a vertical orange split-bar through it and attaches a
+// small orange "fixed" node carrying the set value (e.g. $a$) just to its
+// right; the treatment's causal out-edges are re-sourced from that fixed value
+// as orange `cfedge`s. Every node downstream of one or more interventions is
+// relabelled with potential-outcome notation, e.g. $H_1$ -> $H_1(a, v_0)$,
+// accumulating one argument per intervention that causally reaches it (in the
+// order the interventions were given, so multi-part interventions like
+// intervene(m, ['A', 'V0']) produce $H_1(a, v_0)$ rather than two passes of
+// generic superscripts). Reproduces the grammar of swig-template.tex.
 
-import { cloneModel, descendantsOf, childrenOf, parentsOf, defaultLabel } from './model.mjs';
+import { cloneModel, descendantsOf, childrenOf } from './model.mjs';
 
-// intervene(model, nodeId, { regimeId, regimeLabel, superscript })
-export function intervene(model, nodeId, opts = {}) {
+// Grid-unit gap left for a fixed-value node when splitting a treatment (tight,
+// centered split; see \splitbar in tikz/dag-styles.tex). A flat constant
+// collides in practice: if the intervened node is itself a descendant of an
+// earlier intervention (e.g. V0 downstream of A), its label already carries a
+// potential-outcome argument (e.g. $V_0(\cfarg{a})$) and is visibly wider than
+// a bare label, so a fixed gap places the fixed-value node too close and the
+// split-bar runs through its text. Scale the gap by how much is already inside
+// the label's outermost parens (confirmed by actually compiling the TikZ and
+// looking for overlap, not just by eyeballing the coordinate math).
+const BASE_DELTA = 0.4;
+const DELTA_PER_ARG_CHAR = 0.08;
+
+function splitDelta(label) {
+  const inner = String(label).replace(/^\$/, '').replace(/\$$/, '');
+  const m = inner.match(/\(([^()]*)\)$/);
+  return BASE_DELTA + (m ? DELTA_PER_ARG_CHAR * m[1].length : 0);
+}
+
+// intervene(model, nodeId | [nodeId, ...], { values: { [nodeId]: 'a' } })
+export function intervene(model, nodeIds, opts = {}) {
+  const ids = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
   const m = cloneModel(model);
-  const target = m.nodes.find((n) => n.id === nodeId);
-  if (!target) throw new Error(`intervene: no node '${nodeId}'`);
 
-  const sup = opts.superscript || 's';
-  const regimeId = opts.regimeId || uniqueId(m, 'G');
-  const regimeLabel = opts.regimeLabel || `$${regimeId}^{(${sup})}$`;
-
-  // Counterfactual descendants of the split (computed on the pre-transform graph).
-  const cf = descendantsOf(m, nodeId);
-
-  // Regime node: just right of the treatment, on its row.
-  m.nodes.push({ id: regimeId, label: regimeLabel, x: target.x + 1, y: target.y, style: 'regime' });
-
-  // Reads edges: regime reads the treatment's parents (its determinants).
-  for (const p of parentsOf(m, nodeId)) {
-    if (!m.edges.some((e) => e.from === p && e.to === regimeId)) {
-      m.edges.push({ from: p, to: regimeId, style: 'reads', bend: 0 });
-    }
+  for (const id of ids) {
+    if (!m.nodes.some((n) => n.id === id)) throw new Error(`intervene: no node '${id}'`);
   }
 
-  // Re-source the treatment's causal out-edges from the regime as cfedges.
-  const outKids = childrenOf(m, nodeId);
-  m.edges = m.edges.filter((e) => !(e.from === nodeId && (e.style === 'causal' || e.style === 'det')));
-  for (const kid of outKids) {
-    m.edges.push({ from: regimeId, to: kid, style: 'cfedge', bend: 0 });
-  }
+  const value = {};
+  for (const id of ids) value[id] = opts.values?.[id] || defaultValueSymbol(id);
 
-  // Relabel counterfactual descendants with the superscript.
+  // Descendants computed on the pre-transform graph, before any node gets split.
+  const desc = {};
+  for (const id of ids) desc[id] = descendantsOf(m, id);
+
+  // Relabel every node affected by one or more interventions with the ordered
+  // list of potential-outcome arguments that reach it (an intervened node
+  // itself may be a descendant of an earlier one, e.g. V0 depends on A).
   for (const n of m.nodes) {
-    if (cf.has(n.id)) n.label = cfSuperscript(n.label, sup);
+    const args = ids.filter((id) => id !== n.id && desc[id].has(n.id)).map((id) => value[id]);
+    if (args.length) n.label = appendArgs(n.label, args);
   }
 
   m.meta.kind = 'swig';
   m.swig ||= { interventions: [] };
-  if (!m.swig.interventions.some((iv) => iv.node === nodeId)) {
-    m.swig.interventions.push({ node: nodeId, regimeLabel: regimeId });
+
+  for (const id of ids) {
+    const target = m.nodes.find((n) => n.id === id);
+    const fixedId = uniqueId(m, `${id}_v`);
+    const delta = splitDelta(target.label);
+
+    // Make room for the fixed-value node: shift every other node whose x is
+    // past the intervened node by delta, so the tight split doesn't squash
+    // whatever used to sit immediately downstream (and nodes column-aligned
+    // with `id` stay aligned with its new column after the shift).
+    for (const n of m.nodes) {
+      if (n.x > target.x) n.x += delta;
+    }
+    m.nodes.push({ id: fixedId, label: `$${value[id]}$`, x: target.x + delta, y: target.y, style: 'fixed' });
+
+    // Re-source the treatment's causal out-edges from its fixed value as cfedges.
+    const outKids = childrenOf(m, id);
+    m.edges = m.edges.filter((e) => !(e.from === id && (e.style === 'causal' || e.style === 'det')));
+    for (const kid of outKids) m.edges.push({ from: fixedId, to: kid, style: 'cfedge', bend: 0 });
+
+    if (!m.swig.interventions.some((iv) => iv.node === id)) {
+      m.swig.interventions.push({ node: id, regimeLabel: fixedId, value: value[id] });
+    }
   }
+
   return m;
 }
 
-function cfSuperscript(label, sup) {
+// A -> a, V0 -> v_0, X1 -> x_1 (bare letters lowercase; trailing digits become a subscript).
+function defaultValueSymbol(id) {
+  const m = /^([A-Za-z]+)(\d+)?$/.exec(String(id));
+  if (!m) return String(id).toLowerCase();
+  const [, letters, digits] = m;
+  return digits ? `${letters.toLowerCase()}_${digits}` : letters.toLowerCase();
+}
+
+function appendArgs(label, args) {
   const inner = String(label).replace(/^\$/, '').replace(/\$$/, '');
-  if (new RegExp(`\\^\\{?${sup}`).test(inner)) return label; // already counterfactual
-  return `$${inner}^{${sup}}$`;
+  const wrapped = args.map((a) => `\\cfarg{${a}}`);
+  // idempotent: merge into an existing arg list rather than appending a second one.
+  const m = inner.match(/^(.*)\(([^()]*)\)$/);
+  if (m) {
+    const [, base, existing] = m;
+    const have = existing.split(',').map((s) => s.trim()).filter(Boolean);
+    for (const a of wrapped) if (!have.includes(a)) have.push(a);
+    return `$${base}(${have.join(', ')})$`;
+  }
+  return `$${inner}(${wrapped.join(', ')})$`;
 }
 
 function uniqueId(model, base) {

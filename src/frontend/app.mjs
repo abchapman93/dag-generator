@@ -362,7 +362,7 @@ export function mount({ stage }) {
       $('#i-intervene').addEventListener('click', () => {
         model = intervene(model, n.id); model.meta.style = renderStyle;
         canvas.setModel(model, { refit: true }); canvas.clearSelection();
-        regenPanels(); renderInspector(null); invalidateRevert(); status('ok', null, 'SWIG: split treatment into regime node');
+        regenPanels(); renderInspector(null); invalidateRevert(); status('ok', null, 'SWIG: split treatment into fixed value');
       });
     } else {
       const e = model.edges[sel.index]; if (!e) { box.innerHTML = ''; return; }
