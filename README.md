@@ -56,6 +56,10 @@ tikz ────┘     (src/engine)             └─ pdf/svg/png   (LaTeX co
 - **Export destination** — `export ▾` uses the browser's native Save dialog
   (File System Access API) so you choose the folder and filename; it falls back
   to a normal download where that API isn't available.
+- **Keyboard** — ⌘/Ctrl-Z undo, ⌘/Ctrl-⇧-Z (or ⌘/Ctrl-Y) redo, ⌘/Ctrl-N new
+  blank DAG, Delete/Backspace removes the selection. History is per-DAG and
+  coalesces rapid bursts (e.g. a drag) into one step; text-field edits keep native
+  undo. (Note: some browsers reserve ⌘N for "new window".)
 
 ## Two-way editing
 

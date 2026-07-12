@@ -48,6 +48,7 @@ export function mount({ stage }) {
   let preLayout = null;  // snapshot for one-step "revert layout"
   let currentSlug = null, currentName = '';  // the open saved-config, if any
   let loading = false, autosaveTimer = null; // autosave-to-current-config state
+  let undoStack = [], redoStack = [], lastSnapshot = JSON.stringify(model), lastRecordTime = 0;
 
   function showRevert(on) { const b = $('[data-act=revert]'); if (b) b.hidden = !on; }
   function invalidateRevert() { if (preLayout) { preLayout = null; showRevert(false); } }
@@ -128,6 +129,8 @@ export function mount({ stage }) {
 
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); newDag(); return; }
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !isTyping(e)) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || e.key === 'Y') && !isTyping(e)) { e.preventDefault(); redo(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && !isTyping(e)) { e.preventDefault(); canvas.deleteSelection(); }
     if (e.key === 'Escape') canvas.setMode('select');
   });
@@ -172,6 +175,38 @@ export function mount({ stage }) {
   async function flushAutosave() {
     if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; await doAutosave(); }
   }
+
+  // ---- undo / redo (snapshot history; coalesces rapid bursts like a drag) ----
+  function recordUndo() {
+    const cur = JSON.stringify(model);
+    if (cur === lastSnapshot) return;
+    const now = Date.now();
+    if (now - lastRecordTime > 350 || !undoStack.length) {  // separate action → new step
+      undoStack.push(lastSnapshot);
+      if (undoStack.length > 200) undoStack.shift();
+    }                                                       // else coalesce into the burst
+    lastSnapshot = cur; lastRecordTime = now; redoStack = [];
+  }
+  function resetHistory() { undoStack = []; redoStack = []; lastSnapshot = JSON.stringify(model); lastRecordTime = 0; }
+  function restore(serialized) {
+    model = JSON.parse(serialized); lastSnapshot = serialized;
+    renderStyle = model.meta?.style || renderStyle;
+    $('[data-act=style]').textContent = renderStyle === 'informal' ? 'Style: Informal' : 'Style: Manuscript';
+    canvas.setStyle(renderStyle); canvas.setModel(model, { refit: false }); canvas.clearSelection();
+    regenPanels(); renderInspector(null); invalidateRevert();
+  }
+  function undo() {
+    if (!undoStack.length) { status('ok', null, 'nothing to undo'); return; }
+    redoStack.push(lastSnapshot);
+    restore(undoStack.pop());
+    status('ok', null, `undo — ${undoStack.length} more`);
+  }
+  function redo() {
+    if (!redoStack.length) { status('ok', null, 'nothing to redo'); return; }
+    undoStack.push(lastSnapshot);
+    restore(redoStack.pop());
+    status('ok', null, 'redo');
+  }
   async function refreshConfigList() {
     const box = $('#cfg-list');
     let list = [];
@@ -213,7 +248,7 @@ export function mount({ stage }) {
       $('[data-act=style]').textContent = renderStyle === 'informal' ? 'Style: Informal' : 'Style: Manuscript';
       setCurrent(slug, cfg.name); $('#cfg-name').value = cfg.name;  // set BEFORE regen so autosave targets the right config
       canvas.setStyle(renderStyle); canvas.setModel(model, { refit: true });
-      regenPanels(); renderInspector(null); invalidateRevert();
+      resetHistory(); regenPanels(); renderInspector(null); invalidateRevert();
       $('.dg-configs').open = false;
       status('ok', null, `opened “${cfg.name}”`);
     } catch (e) { status('warn', null, `open failed: ${e.message}`); }
@@ -234,7 +269,7 @@ export function mount({ stage }) {
     model = { meta: { kind: 'dag', style: renderStyle, title: '', nodeSep: 1 }, nodes: [], edges: [] };
     setCurrent(null, ''); $('#cfg-name').value = '';
     canvas.setModel(model, { refit: true });
-    regenPanels(); renderInspector(null); invalidateRevert();
+    resetHistory(); regenPanels(); renderInspector(null); invalidateRevert();
     $('.dg-configs').open = false;
     status('ok', null, 'new blank DAG — add nodes (+ node) or type a formula');
     loading = false;
@@ -364,7 +399,8 @@ export function mount({ stage }) {
       if (document.activeElement === p.el) continue;
       p.el.value = p.emit();
     }
-    scheduleAutosave();  // every mutation routes through here → auto-save to the open config
+    recordUndo();        // every mutation routes through here → snapshot for undo …
+    scheduleAutosave();  // … and auto-save to the open config
   }
   function status(kind, flags, msg) {
     const el = $('.dg-status');
