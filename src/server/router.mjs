@@ -5,6 +5,7 @@
 
 import express from 'express';
 import { detectTools, compile } from './compile.mjs';
+import { listConfigs, readConfig, writeConfig, deleteConfig } from './configs.mjs';
 
 const MIME = { pdf: 'application/pdf', svg: 'image/svg+xml', png: 'image/png' };
 
@@ -13,6 +14,26 @@ export function createRouter() {
 
   r.get('/api/tools', async (_req, res) => {
     try { res.json(await detectTools()); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ---- saved-DAG registry ----
+  r.get('/api/configs', async (_req, res) => {
+    try { res.json(await listConfigs()); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  r.get('/api/configs/:slug', async (req, res) => {
+    try { res.json(await readConfig(req.params.slug)); }
+    catch { res.status(404).json({ error: 'not found' }); }
+  });
+  r.put('/api/configs', async (req, res) => {
+    const { name, model, slug } = req.body || {};
+    if (!model || !Array.isArray(model.nodes)) return res.status(400).json({ error: 'missing model' });
+    try { res.json(await writeConfig({ name, model, slug })); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  r.delete('/api/configs/:slug', async (req, res) => {
+    try { await deleteConfig(req.params.slug); res.json({ ok: true }); }
     catch (e) { res.status(500).json({ error: e.message }); }
   });
 

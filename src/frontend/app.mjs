@@ -21,6 +21,7 @@ export function mount({ stage }) {
   let model = layout(formula.parse(START).model);
   let renderStyle = 'informal';
   let preLayout = null;  // snapshot for one-step "revert layout"
+  let currentSlug = null, currentName = '';  // the open saved-config, if any
 
   function showRevert(on) { const b = $('[data-act=revert]'); if (b) b.hidden = !on; }
   function invalidateRevert() { if (preLayout) { preLayout = null; showRevert(false); } }
@@ -111,38 +112,126 @@ export function mount({ stage }) {
     setTimeout(() => canvas.refit(), 260);
   });
 
-  // ---- export menu ----
+  // ---- configs: save / open / delete ----
+  function setCurrent(slug, name) {
+    currentSlug = slug; currentName = name || '';
+    $('#dg-current').textContent = currentName ? `· ${currentName}` : '';
+  }
+  async function refreshConfigList() {
+    const box = $('#cfg-list');
+    let list = [];
+    try { list = await (await fetch('/dag/api/configs')).json(); } catch { /* offline */ }
+    if (!list.length) { box.innerHTML = '<p class="dg-muted dg-cfg-empty">No saved configs yet.</p>'; return; }
+    box.innerHTML = list.map((c) => `
+      <div class="dg-cfg-item${c.slug === currentSlug ? ' on' : ''}" data-slug="${esc(c.slug)}">
+        <button class="dg-cfg-open" data-open="${esc(c.slug)}" title="open">
+          <span class="dg-cfg-name">${esc(c.name)}</span>
+          <span class="dg-muted">${c.nodes}n · ${c.edges}e</span>
+        </button>
+        <button class="dg-cfg-del" data-del="${esc(c.slug)}" title="delete">✕</button>
+      </div>`).join('');
+    box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openConfig(b.dataset.open)));
+    box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); deleteConfig(b.dataset.del); }));
+  }
+  async function saveConfig() {
+    const name = ($('#cfg-name').value || currentName || 'dag').trim();
+    model.meta.style = renderStyle; model.meta.title = name;
+    try {
+      const res = await fetch('/dag/api/configs', {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, model }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.status);
+      const saved = await res.json();
+      setCurrent(saved.slug, saved.name);
+      await refreshConfigList();
+      status('ok', null, `saved “${saved.name}”`);
+    } catch (e) { status('warn', null, `save failed: ${e.message}`); }
+  }
+  async function openConfig(slug) {
+    try {
+      const cfg = await (await fetch(`/dag/api/configs/${slug}`)).json();
+      model = cfg.model;
+      renderStyle = model.meta?.style || 'informal';
+      $('[data-act=style]').textContent = renderStyle === 'informal' ? 'Style: Informal' : 'Style: Manuscript';
+      canvas.setStyle(renderStyle); canvas.setModel(model, { refit: true });
+      regenPanels(); renderInspector(null); invalidateRevert();
+      setCurrent(slug, cfg.name); $('#cfg-name').value = cfg.name;
+      $('.dg-configs').open = false;
+      status('ok', null, `opened “${cfg.name}”`);
+    } catch (e) { status('warn', null, `open failed: ${e.message}`); }
+  }
+  async function deleteConfig(slug) {
+    try {
+      await fetch(`/dag/api/configs/${slug}`, { method: 'DELETE' });
+      if (slug === currentSlug) setCurrent(null, '');
+      await refreshConfigList();
+    } catch (e) { status('warn', null, `delete failed: ${e.message}`); }
+  }
+  $('[data-cfg=save]').addEventListener('click', saveConfig);
+  $('#cfg-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveConfig(); } });
+  $('.dg-configs').addEventListener('toggle', (e) => { if (e.target.open) refreshConfigList(); });
+
+  // ---- export (native Save dialog → choose where; falls back to download) ----
   stage.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => doExport(b.dataset.export)));
 
-  function doExport(fmt) {
-    model.meta.style = renderStyle;
-    const base = (model.meta.title || 'dag').replace(/\W+/g, '-').toLowerCase() || 'dag';
-    if (fmt === 'json') return download(`${base}.json`, JSON.stringify(model, null, 2), 'application/json');
-    if (fmt === 'formula') return download(`${base}.formula.txt`, formula.emit(model), 'text/plain');
-    if (fmt === 'dagitty') return download(`${base}.dagitty.txt`, dagitty.emit(model), 'text/plain');
-    if (fmt === 'tex') return download(`${base}.tex`, tikz.emit(model, { wrap: 'standalone' }), 'text/plain');
-    if (fmt === 'svg') return download(`${base}.svg`, toSVG(model, { style: renderStyle }), 'image/svg+xml');
-    if (fmt === 'html') return download(`${base}.html`, toHTML(model, { style: renderStyle }), 'text/html');
-    if (['pdf', 'png', 'svg-tex'].includes(fmt)) return compileExport(fmt, base);
-  }
+  const EXPORT_META = {
+    json: ['json', 'application/json'], formula: ['txt', 'text/plain'], dagitty: ['txt', 'text/plain'],
+    tex: ['tex', 'application/x-tex'], svg: ['svg', 'image/svg+xml'], html: ['html', 'text/html'],
+    pdf: ['pdf', 'application/pdf'], png: ['png', 'image/png'], 'svg-tex': ['svg', 'image/svg+xml'],
+  };
 
-  async function compileExport(fmt, base) {
-    const format = fmt === 'svg-tex' ? 'svg' : fmt;
-    status('compiling', null, 'compiling with LaTeX…');
-    try {
+  async function doExport(fmt) {
+    model.meta.style = renderStyle;
+    const [ext, mime] = EXPORT_META[fmt];
+    const base = (currentName || model.meta.title || 'dag').replace(/\W+/g, '-').toLowerCase() || 'dag';
+    const name = `${base}.${ext}`;
+
+    const produce = async () => {
+      if (fmt === 'json') return JSON.stringify(model, null, 2);
+      if (fmt === 'formula') return formula.emit(model);
+      if (fmt === 'dagitty') return dagitty.emit(model);
+      if (fmt === 'tex') return tikz.emit(model, { wrap: 'standalone' });
+      if (fmt === 'svg') return toSVG(model, { style: renderStyle });
+      if (fmt === 'html') return toHTML(model, { style: renderStyle });
+      const format = fmt === 'svg-tex' ? 'svg' : fmt;  // compiled formats
+      status('compiling', null, 'compiling with LaTeX…');
       const res = await fetch('/dag/api/compile', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model, format }),
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, format }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        status('warn', null, err.code === 'NO_LATEX' ? 'LaTeX not installed — use SVG/HTML export instead.' : `compile failed: ${err.error || res.status}`);
+        throw new Error(err.code === 'NO_LATEX' ? 'LaTeX not installed — use SVG/HTML export instead.' : (err.error || `compile ${res.status}`));
+      }
+      return await res.blob();
+    };
+    await saveOut(name, mime, ext, produce);
+  }
+
+  // Show the OS Save dialog (File System Access API) so the user picks the folder;
+  // fall back to a normal download when the API is unavailable or cancelled.
+  async function saveOut(name, mime, ext, produce) {
+    if (window.showSaveFilePicker) {
+      let handle;
+      try {
+        handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: ext.toUpperCase(), accept: { [mime]: ['.' + ext] } }] });
+      } catch (e) { if (e.name === 'AbortError') { status('ok'); return; } handle = null; }
+      if (handle) {
+        try {
+          const data = await produce();
+          const w = await handle.createWritable();
+          await w.write(data instanceof Blob ? data : new Blob([data], { type: mime }));
+          await w.close();
+          status('ok', null, `saved ${handle.name}`);
+        } catch (e) { status('warn', null, e.message); }
         return;
       }
-      const blob = await res.blob();
-      downloadBlob(`${base}.${format === 'svg' ? 'svg' : format}`, blob);
-      status('ok', null, `compiled ${format.toUpperCase()} ✓`);
-    } catch (e) { status('warn', null, `compile error: ${e.message}`); }
+    }
+    try {
+      const data = await produce();
+      downloadBlob(name, data instanceof Blob ? data : new Blob([data], { type: mime }));
+      status('ok', null, `downloaded ${name}`);
+    } catch (e) { status('warn', null, e.message); }
   }
 
   // ---- inspector ----
@@ -222,13 +311,13 @@ function select(id, opts, cur) { return `<select id="${id}">${opts.map((o) => `<
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function isTyping(e) { const t = e.target.tagName; return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT'; }
 function debounce(fn, ms) { let id; return (...a) => { clearTimeout(id); id = setTimeout(() => fn(...a), ms); }; }
-function download(name, text, type) { downloadBlob(name, new Blob([text], { type })); }
 function downloadBlob(name, blob) { const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(u), 1500); }
 
 const TEMPLATE = `
 <div class="dg-app">
   <div class="dg-toolbar">
     <strong class="dg-brand">dag-generator</strong>
+    <span class="dg-current" id="dg-current"></span>
     <button class="dg-btn" data-act="style">Style: Informal</button>
     <span class="dg-sep"></span>
     <button class="dg-btn" data-act="addNode">+ node</button>
@@ -238,6 +327,16 @@ const TEMPLATE = `
     <button class="dg-btn dg-revert" data-act="revert" hidden>↶ revert</button>
     <button class="dg-btn" data-act="fit">fit</button>
     <span class="dg-sep"></span>
+    <details class="dg-export dg-configs">
+      <summary class="dg-btn">configs ▾</summary>
+      <div class="dg-menu">
+        <div class="dg-save-row">
+          <input id="cfg-name" placeholder="name…" spellcheck="false">
+          <button data-cfg="save">Save</button>
+        </div>
+        <div class="dg-cfg-list" id="cfg-list"></div>
+      </div>
+    </details>
     <details class="dg-export">
       <summary class="dg-btn">export ▾</summary>
       <div class="dg-menu">

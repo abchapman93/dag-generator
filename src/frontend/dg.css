@@ -24,6 +24,21 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 .dg-menu button{font:inherit;font-size:13px;text-align:left;border:0;background:none;border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--dg-ink)}
 .dg-menu button:hover{background:var(--dg-accent-weak);color:var(--dg-accent-ink)}
 
+.dg-current{font-size:12.5px;color:var(--dg-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dg-configs .dg-menu{min-width:230px;padding:6px}
+.dg-save-row{display:flex;gap:5px;padding:2px 2px 7px;border-bottom:1px solid var(--dg-line);margin-bottom:5px}
+.dg-save-row input{flex:1;min-width:0;font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--dg-line);border-radius:7px;color:var(--dg-ink)}
+.dg-save-row button{font:inherit;font-size:13px;border:1px solid var(--dg-accent);background:var(--dg-accent);color:#fff;border-radius:7px;padding:5px 12px;cursor:pointer}
+.dg-save-row button:hover{filter:brightness(.95)}
+.dg-cfg-list{max-height:280px;overflow:auto}
+.dg-cfg-empty{padding:8px 10px;margin:0}
+.dg-cfg-item{display:flex;align-items:center;border-radius:7px}
+.dg-cfg-item.on{background:var(--dg-accent-weak)}
+.dg-cfg-item:hover{background:var(--dg-bg)}
+.dg-cfg-open{flex:1;min-width:0;display:flex;justify-content:space-between;align-items:center;gap:8px;font:inherit;font-size:13px;text-align:left;border:0;background:none;border-radius:7px;padding:7px 9px;cursor:pointer;color:var(--dg-ink)}
+.dg-cfg-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dg-cfg-del{border:0;background:none;color:var(--dg-muted);cursor:pointer;padding:6px 9px;border-radius:7px;font-size:12px}
+.dg-cfg-del:hover{color:var(--dg-warn);background:#f8d7da55}
 .dg-body{flex:1;display:flex;min-height:0}
 .dg-canvas-wrap{flex:1;position:relative;min-width:0;background:#fff}
 .dg-canvas-host{position:absolute;inset:0}

@@ -45,6 +45,16 @@ tikz ────┘     (src/engine)             └─ pdf/svg/png   (LaTeX co
 - **`skills/` + `commands/`** — the Claude Code skill (symlinked into `~/.claude`).
 - **`tikz/dag-styles.tex`** — the named-style visual grammar (single source).
 
+## Saving & exporting
+
+- **Configs** — the toolbar's `configs ▾` menu saves the current DAG to a named
+  registry and reopens/deletes saved ones. Configs live as JSON under
+  `~/.dag-generator/configs/` (override with `DAG_GENERATOR_DATA`); the directory
+  listing *is* the registry. Served by `GET/PUT/DELETE /dag/api/configs`.
+- **Export destination** — `export ▾` uses the browser's native Save dialog
+  (File System Access API) so you choose the folder and filename; it falls back
+  to a normal download where that API isn't available.
+
 ## Two-way editing
 
 The exported TikZ **is** the layout source of truth. Nodes snap to a grid and
