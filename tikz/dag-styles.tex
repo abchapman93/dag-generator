@@ -27,7 +27,10 @@
 }
 % Counterfactual superscript marker (orange s), matching Y_t^s notation.
 \providecommand{\cfs}{{\color{orange}s}}
-% Node-split bar for SWIGs: \splitbar{<node>} draws a vertical orange bar at the
-% node's right edge; place the regime node immediately to its right.
-\providecommand{\splitbar}[1]{%
-  \draw[splitline] ([yshift=3.5mm]#1.east) -- ([yshift=-3.5mm]#1.east);}
+% Colors just the intervention-value symbols inside potential-outcome notation,
+% e.g. $H_1(\cfarg{a}, \cfarg{v_0})$.
+\providecommand{\cfarg}[1]{{\color{orange}#1}}
+% Node-split bar for SWIGs: \splitbar{<node>}{<fixed>} draws a vertical orange
+% bar centered between the node and its fixed-value node.
+\providecommand{\splitbar}[2]{%
+  \draw[splitline] ($(#1.east)!0.5!(#2.west)+(0,3.5mm)$) -- ($(#1.east)!0.5!(#2.west)+(0,-3.5mm)$);}

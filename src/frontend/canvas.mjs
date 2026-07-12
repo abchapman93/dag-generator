@@ -95,6 +95,7 @@ export function createCanvas(host, cbs) {
     s += grid();
     model.edges.forEach((e, i) => { s += edgeSVG(e, i, pos); });
     model.nodes.forEach((n) => { s += nodeSVG(n, pos[n.id]); });
+    s += (model.swig?.interventions || []).map((iv) => splitbarSVG(iv, pos)).join('');
     svg.innerHTML = s;
     bind(pos);
     cbs.onStatus?.(mode, edgeFrom);
@@ -157,6 +158,15 @@ export function createCanvas(host, cbs) {
   }
 
   function nodeById(id) { return model.nodes.find((n) => n.id === id) || { style: 'rv' }; }
+
+  // Vertical orange bar centered between the rv node and its fixed-value node,
+  // marking the SWIG split (mirrors src/engine/svg.mjs's renderSplitbar).
+  function splitbarSVG(iv, pos) {
+    const a = pos[iv.node], b = pos[iv.regimeLabel];
+    if (!a || !b) return '';
+    const x = (a.x + b.x) / 2;
+    return `<line x1="${x}" y1="${a.y - 16}" x2="${x}" y2="${a.y + 16}" stroke="#e07a1f" stroke-width="2.2"/>`;
+  }
 
   // ---- interaction ----
   function bind(pos) {

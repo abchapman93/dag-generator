@@ -142,11 +142,26 @@ describe('tikz canonical grammar', () => {
     expect(model.nodes.length).toBe(3);
   });
 
-  it('parses a splitbar as a SWIG intervention', () => {
-    const src = '\\node[rv](A) at (0,0) {$A$};\n\\splitbar{A};\n\\node[regime](G) at (1,0) {$G$};';
+  it('parses a 2-arg splitbar as a SWIG intervention, preserving the fixed-node id', () => {
+    const src = '\\node[rv](A) at (0,0) {$A$};\n\\splitbar{A}{A_v};\n\\node[fixed](A_v) at (0.4,0) {$a$};';
     const { model } = tikz.parse(src);
     expect(model.meta.kind).toBe('swig');
     expect(model.swig.interventions[0].node).toBe('A');
+    expect(model.swig.interventions[0].regimeLabel).toBe('A_v');
+  });
+
+  it('round-trips a 2-arg splitbar through emit -> parse', () => {
+    const m = emptyModel({
+      nodes: [
+        { id: 'A', x: 0, y: 0, label: '$A$' },
+        { id: 'A_v', x: 0.4, y: 0, label: '$a$', style: 'fixed' },
+      ],
+      swig: { interventions: [{ node: 'A', regimeLabel: 'A_v' }] },
+    });
+    const tex = tikz.emit(m);
+    expect(tex).toMatch(/\\splitbar\{A\}\{A_v\};/);
+    const { model: back } = tikz.parse(tex);
+    expect(back.swig.interventions[0]).toEqual({ node: 'A', regimeLabel: 'A_v' });
   });
 });
 
@@ -199,19 +214,21 @@ describe('swig transform', () => {
     expect(m.edges.some((e) => e.from === fixed.id && e.to === 'Y' && e.style === 'cfedge')).toBe(true);
     // the observed A -> Y causal edge is gone (the fixed value causes the counterfactual)
     expect(m.edges.some((e) => e.from === 'A' && e.to === 'Y' && e.style === 'causal')).toBe(false);
-    // Y is relabelled with the potential-outcome argument
-    expect(m.nodes.find((n) => n.id === 'Y').label).toBe('$Y(a)$');
+    // Y is relabelled with the potential-outcome argument, colored via \cfarg
+    expect(m.nodes.find((n) => n.id === 'Y').label).toBe('$Y(\\cfarg{a})$');
     expect(m.swig.interventions[0].node).toBe('A');
   });
 
-  it('emits a splitbar and round-trips through tikz', () => {
+  it('emits a 2-arg splitbar (centered between the node and its fixed value) and round-trips through tikz', () => {
     const m = intervene(base(), 'A');
+    const fixedId = m.swig.interventions[0].regimeLabel;
     const tex = tikz.emit(m);
-    expect(tex).toMatch(/\\splitbar\{A\}/);
+    expect(tex).toMatch(new RegExp(`\\\\splitbar\\{A\\}\\{${fixedId}\\};`));
     expect(tex).toMatch(/\\node\[fixed\]/);
     const back = tikz.parse(tex).model;
     expect(back.meta.kind).toBe('swig');
     expect(back.nodes.some((n) => n.style === 'fixed')).toBe(true);
+    expect(back.swig.interventions[0].regimeLabel).toBe(fixedId);
   });
 
   it('merges into an existing parenthetical instead of stacking a second one', () => {
@@ -219,7 +236,7 @@ describe('swig transform', () => {
     m.nodes.find((n) => n.id === 'Y').label = '$Y(u)$';
     const swigged = intervene(layout(m), 'A');
     const label = swigged.nodes.find((n) => n.id === 'Y').label;
-    expect(label).toBe('$Y(u, a)$');
+    expect(label).toBe('$Y(u, \\cfarg{a})$');
   });
 
   it('supports a two-part intervention with accumulated arguments in order', () => {
@@ -228,10 +245,103 @@ describe('swig transform', () => {
     const swigged = intervene(m, ['A', 'M']);
     expect(swigged.nodes.filter((n) => n.style === 'fixed').map((n) => n.label)).toEqual(['$a$', '$m$']);
     // M is a descendant of A, so its own (kept) node picks up A's argument
-    expect(swigged.nodes.find((n) => n.id === 'M').label).toBe('$M(a)$');
+    expect(swigged.nodes.find((n) => n.id === 'M').label).toBe('$M(\\cfarg{a})$');
     // Y is downstream of both, in the order given
-    expect(swigged.nodes.find((n) => n.id === 'Y').label).toBe('$Y(a, m)$');
+    expect(swigged.nodes.find((n) => n.id === 'Y').label).toBe('$Y(\\cfarg{a}, \\cfarg{m})$');
     expect(swigged.swig.interventions.map((iv) => iv.node)).toEqual(['A', 'M']);
+  });
+
+  it('wraps each accumulated argument in \\cfarg{...} (orange intervention-value coloring)', () => {
+    const m = intervene(base(), 'A', { values: { A: 'a' } });
+    expect(m.nodes.find((n) => n.id === 'Y').label).toBe('$Y(\\cfarg{a})$');
+    // the fixed node's own label stays plain -- the `fixed` node style already renders orange
+    expect(m.nodes.find((n) => n.style === 'fixed').label).toBe('$a$');
+  });
+
+  it('shifts every node downstream of the intervened node by delta, preserving relative order', () => {
+    const m = base();
+    const yBefore = m.nodes.find((n) => n.id === 'Y').x;
+    const aBefore = m.nodes.find((n) => n.id === 'A').x;
+    const swigged = intervene(m, 'A');
+    const fixed = swigged.nodes.find((n) => n.style === 'fixed');
+    const aAfter = swigged.nodes.find((n) => n.id === 'A').x;
+    const yAfter = swigged.nodes.find((n) => n.id === 'Y').x;
+    const DELTA = 0.4;
+    expect(aAfter).toBe(aBefore); // the intervened node itself doesn't move
+    expect(fixed.x).toBeCloseTo(aAfter + DELTA);
+    expect(yAfter).toBeCloseTo(yBefore + DELTA);
+    // no overlap / sane ordering: A < fixed value < Y
+    expect(aAfter).toBeLessThan(fixed.x);
+    expect(fixed.x).toBeLessThan(yAfter);
+  });
+
+  it('scales the split gap up when the intervened node already carries an argument (collision fix)', () => {
+    // A -> M -> Y, A -> Y: by the time M is split, its own label already carries A's
+    // argument ($M(\cfarg{a})$), visibly wider than a bare label. A flat gap placed the
+    // fixed-value node close enough to overlap the wider label's text (confirmed by
+    // actually compiling the exported TikZ to PDF and looking for the overlap, not just
+    // by eyeballing the coordinate math) -- the gap must scale up for this case.
+    const m = layout(formula.parse('exposure: A\nmediator: M\noutcome: Y\nY ~ A + M\nM ~ A').model);
+    const mBefore = m.nodes.find((n) => n.id === 'M').x;
+    const yBefore = m.nodes.find((n) => n.id === 'Y').x;
+    const swigged = intervene(m, ['A', 'M']);
+
+    expect(swigged.nodes.find((n) => n.id === 'M').label).toBe('$M(\\cfarg{a})$');
+
+    const mAfter = swigged.nodes.find((n) => n.id === 'M').x;
+    const yAfter = swigged.nodes.find((n) => n.id === 'Y').x;
+    const aFixed = swigged.nodes.find((n) => n.id === 'A_v');
+    const mFixed = swigged.nodes.find((n) => n.id === 'M_v');
+
+    const plainGap = aFixed.x - swigged.nodes.find((n) => n.id === 'A').x; // A's label is bare
+    const widenedGap = mFixed.x - mAfter; // M's label already carries an argument when split
+
+    expect(mAfter).toBeCloseTo(mBefore + plainGap); // A's split shifted M by the plain gap
+    expect(widenedGap).toBeGreaterThan(plainGap); // the fix: a wider label gets more room
+    expect(yAfter).toBeCloseTo(yBefore + plainGap + widenedGap); // Y absorbs both shifts
+    // sane, non-overlapping relative order
+    expect(aFixed.x).toBeLessThan(mAfter);
+    expect(mFixed.x).toBeLessThan(yAfter);
+  });
+
+  it('two sequential single-node interventions compose the same as one multi-node call', () => {
+    // The app UI intervenes on one node at a time (per-click); this must match
+    // intervene(model, ['A', 'M']) so the two paths render identically.
+    const build = () => layout(formula.parse('exposure: A\nmediator: M\noutcome: Y\nY ~ A + M\nM ~ A').model);
+    const sequential = intervene(intervene(build(), 'A'), 'M');
+    const multi = intervene(build(), ['A', 'M']);
+    const norm = (m) => ({
+      nodes: m.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y, style: n.style, label: n.label }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+      edges: edgeSet(m),
+      interventions: m.swig.interventions,
+    });
+    expect(norm(sequential)).toEqual(norm(multi));
+  });
+
+  it('keeps column-aligned rows aligned across two sequential interventions', () => {
+    // A/X are roots on separate rows; H0/V0 are column-aligned with each other,
+    // as are H1/V1 -- the property the shift algorithm exists to preserve.
+    const m = emptyModel({
+      nodes: [
+        { id: 'A', x: 0, y: 0, label: '$A$' },
+        { id: 'X', x: 0, y: 1, label: '$X$' },
+        { id: 'H0', x: 1, y: 0, label: '$H_0$' },
+        { id: 'V0', x: 1, y: 1, label: '$V_0$' },
+        { id: 'H1', x: 2, y: 0, label: '$H_1$' },
+        { id: 'V1', x: 2, y: 1, label: '$V_1$' },
+      ],
+      edges: [
+        { from: 'A', to: 'H0', style: 'causal' },
+        { from: 'X', to: 'V0', style: 'causal' },
+        { from: 'H0', to: 'H1', style: 'causal' },
+        { from: 'V0', to: 'V1', style: 'causal' },
+      ],
+    });
+    const swigged = intervene(intervene(m, 'A'), 'V0');
+    const at = (id) => swigged.nodes.find((n) => n.id === id).x;
+    expect(at('H0')).toBe(at('V0'));
+    expect(at('H1')).toBe(at('V1'));
   });
 });
 

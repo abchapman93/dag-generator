@@ -42,7 +42,7 @@ export function toSVG(model, opts = {}) {
   const edgeSVG = model.edges.map((e) => renderEdge(e, pos, nodes, mode)).join('\n');
   const nodeSVG = nodes.map((n) => renderNode(n, pos[n.id], mode)).join('\n');
   const splitSVG = (model.swig?.interventions || [])
-    .map((iv) => renderSplitbar(nodeById(nodes, iv.node), pos[iv.node], mode))
+    .map((iv) => renderSplitbar(pos[iv.node], pos[iv.regimeLabel]))
     .join('\n');
 
   return [
@@ -136,12 +136,12 @@ function trim(p, ux, uy, v) {
 
 function nodeById(nodes, id) { return nodes.find((n) => n.id === id) || { style: 'rv' }; }
 
-// Vertical orange bar at the treatment node's right edge, marking the SWIG split.
-function renderSplitbar(node, p, mode) {
-  if (!node || !p) return '';
-  const v = visual(node, mode);
-  const x = round(p.x + (v.rx || 13));
-  return `<line x1="${x}" y1="${round(p.y - 16)}" x2="${x}" y2="${round(p.y + 16)}" stroke="#e07a1f" stroke-width="2.2"/>`;
+// Vertical orange bar centered between the rv node and its fixed-value node,
+// marking the SWIG split (mirrors the 2-arg \splitbar in tikz/dag-styles.tex).
+function renderSplitbar(a, b) {
+  if (!a || !b) return '';
+  const x = round((a.x + b.x) / 2);
+  return `<line x1="${x}" y1="${round(a.y - 16)}" x2="${x}" y2="${round(a.y + 16)}" stroke="#e07a1f" stroke-width="2.2"/>`;
 }
 
 function marker(style, color) {
@@ -151,6 +151,7 @@ function marker(style, color) {
 // Minimal LaTeX-ish label -> SVG tspans (subscripts, superscripts, \boldsymbol).
 export function tex2disp(s) {
   s = String(s).replace(/^\$/, '').replace(/\$$/, '').replace(/\\boldsymbol\{([^}]*)\}/g, '$1').replace(/\\bar\{([^}]*)\}/g, '$1');
+  s = s.replace(/\\cfarg\{([^}]*)\}/g, "<tspan fill='#e07a1f'>$1</tspan>");
   s = s
     .replace(/\^\{([^}]*)\}/g, "<tspan baseline-shift='super' font-size='0.7em'>$1</tspan>")
     .replace(/\^(\w)/g, "<tspan baseline-shift='super' font-size='0.7em'>$1</tspan>")

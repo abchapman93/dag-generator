@@ -11,6 +11,24 @@
 
 import { cloneModel, descendantsOf, childrenOf } from './model.mjs';
 
+// Grid-unit gap left for a fixed-value node when splitting a treatment (tight,
+// centered split; see \splitbar in tikz/dag-styles.tex). A flat constant
+// collides in practice: if the intervened node is itself a descendant of an
+// earlier intervention (e.g. V0 downstream of A), its label already carries a
+// potential-outcome argument (e.g. $V_0(\cfarg{a})$) and is visibly wider than
+// a bare label, so a fixed gap places the fixed-value node too close and the
+// split-bar runs through its text. Scale the gap by how much is already inside
+// the label's outermost parens (confirmed by actually compiling the TikZ and
+// looking for overlap, not just by eyeballing the coordinate math).
+const BASE_DELTA = 0.4;
+const DELTA_PER_ARG_CHAR = 0.08;
+
+function splitDelta(label) {
+  const inner = String(label).replace(/^\$/, '').replace(/\$$/, '');
+  const m = inner.match(/\(([^()]*)\)$/);
+  return BASE_DELTA + (m ? DELTA_PER_ARG_CHAR * m[1].length : 0);
+}
+
 // intervene(model, nodeId | [nodeId, ...], { values: { [nodeId]: 'a' } })
 export function intervene(model, nodeIds, opts = {}) {
   const ids = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
@@ -41,7 +59,16 @@ export function intervene(model, nodeIds, opts = {}) {
   for (const id of ids) {
     const target = m.nodes.find((n) => n.id === id);
     const fixedId = uniqueId(m, `${id}_v`);
-    m.nodes.push({ id: fixedId, label: `$${value[id]}$`, x: target.x + 1, y: target.y, style: 'fixed' });
+    const delta = splitDelta(target.label);
+
+    // Make room for the fixed-value node: shift every other node whose x is
+    // past the intervened node by delta, so the tight split doesn't squash
+    // whatever used to sit immediately downstream (and nodes column-aligned
+    // with `id` stay aligned with its new column after the shift).
+    for (const n of m.nodes) {
+      if (n.x > target.x) n.x += delta;
+    }
+    m.nodes.push({ id: fixedId, label: `$${value[id]}$`, x: target.x + delta, y: target.y, style: 'fixed' });
 
     // Re-source the treatment's causal out-edges from its fixed value as cfedges.
     const outKids = childrenOf(m, id);
@@ -66,15 +93,16 @@ function defaultValueSymbol(id) {
 
 function appendArgs(label, args) {
   const inner = String(label).replace(/^\$/, '').replace(/\$$/, '');
+  const wrapped = args.map((a) => `\\cfarg{${a}}`);
   // idempotent: merge into an existing arg list rather than appending a second one.
   const m = inner.match(/^(.*)\(([^()]*)\)$/);
   if (m) {
     const [, base, existing] = m;
     const have = existing.split(',').map((s) => s.trim()).filter(Boolean);
-    for (const a of args) if (!have.includes(a)) have.push(a);
+    for (const a of wrapped) if (!have.includes(a)) have.push(a);
     return `$${base}(${have.join(', ')})$`;
   }
-  return `$${inner}(${args.join(', ')})$`;
+  return `$${inner}(${wrapped.join(', ')})$`;
 }
 
 function uniqueId(model, base) {

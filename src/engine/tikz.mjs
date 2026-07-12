@@ -31,7 +31,8 @@ export const STYLE_BLOCK = `\\usetikzlibrary{positioning, arrows.meta, fit, back
   splitline/.style  = {orange, thick},
 }
 \\providecommand{\\cfs}{{\\color{orange}s}}
-\\providecommand{\\splitbar}[1]{\\draw[splitline] ([yshift=3.5mm]#1.east) -- ([yshift=-3.5mm]#1.east);}`;
+\\providecommand{\\cfarg}[1]{{\\color{orange}#1}}
+\\providecommand{\\splitbar}[2]{\\draw[splitline] ($(#1.east)!0.5!(#2.west)+(0,3.5mm)$) -- ($(#1.east)!0.5!(#2.west)+(0,-3.5mm)$);}`;
 
 // ---- emit: model -> canonical TikZ --------------------------------------
 export function emit(model, opts = {}) {
@@ -44,7 +45,7 @@ export function emit(model, opts = {}) {
     body.push(`  \\node[${n.style}](${n.id}) at (${fmt(n.x)},${fmt(n.y)}) {${n.label}};`);
   }
   if (model.swig?.interventions) {
-    for (const iv of model.swig.interventions) body.push(`  \\splitbar{${iv.node}};`);
+    for (const iv of model.swig.interventions) body.push(`  \\splitbar{${iv.node}}{${iv.regimeLabel}};`);
   }
   for (const e of model.edges) {
     const bend = e.bend ? `[bend ${e.bend > 0 ? 'left' : 'right'}=${Math.abs(e.bend)}]` : '';
@@ -81,7 +82,7 @@ function fmt(v) { return (Math.round(v * 100) / 100).toString(); }
 // ---- parse: canonical TikZ -> { model, flags } --------------------------
 const NODE_RE = /^\\node\s*\[([^\]]+)\]\s*\((\w+)\)\s*at\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)\s*\{([\s\S]*)\}\s*;?$/;
 const EDGE_RE = /^\\draw\s*\[([^\]]+)\]\s*\((\w+)\)\s*to\s*(\[[^\]]*\])?\s*\((\w+)\)\s*;?$/;
-const SPLIT_RE = /^\\splitbar\{(\w+)\}\s*;?$/;
+const SPLIT_RE = /^\\splitbar\{(\w+)\}\{(\w+)\}\s*;?$/;
 const BEND_RE = /bend\s+(left|right)\s*=?\s*(\d+)?/;
 
 const IGNORE_RE = /^\\(documentclass|usepackage|usetikzlibrary|newcommand|providecommand|renewcommand|input|include|centering|caption|label|begin|end)\b/;
@@ -123,7 +124,7 @@ export function parse(text) {
     if ((m = SPLIT_RE.exec(line))) {
       (model.swig ||= { interventions: [] });
       if (!model.swig.interventions.some((iv) => iv.node === m[1])) {
-        model.swig.interventions.push({ node: m[1], regimeLabel: '' });
+        model.swig.interventions.push({ node: m[1], regimeLabel: m[2] });
       }
       model.meta.kind = 'swig';
       return;
