@@ -193,6 +193,16 @@ export function mount({ stage }) {
       await refreshConfigList();
     } catch (e) { status('warn', null, `delete failed: ${e.message}`); }
   }
+  function newDag() {
+    if (model.nodes.length && !confirm('Start a new blank DAG? Any unsaved changes will be cleared.')) return;
+    model = { meta: { kind: 'dag', style: renderStyle, title: '', nodeSep: 1 }, nodes: [], edges: [] };
+    canvas.setModel(model, { refit: true });
+    regenPanels(); renderInspector(null); invalidateRevert();
+    setCurrent(null, ''); $('#cfg-name').value = '';
+    $('.dg-configs').open = false;
+    status('ok', null, 'new blank DAG — add nodes (+ node) or type a formula');
+  }
+  $('[data-cfg=new]').addEventListener('click', newDag);
   $('[data-cfg=save]').addEventListener('click', saveConfig);
   $('#cfg-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveConfig(); } });
   $('.dg-configs').addEventListener('toggle', (e) => { if (e.target.open) refreshConfigList(); });
@@ -355,6 +365,7 @@ const TEMPLATE = `
     <details class="dg-export dg-configs">
       <summary class="dg-btn">configs ▾</summary>
       <div class="dg-menu">
+        <button class="dg-cfg-new" data-cfg="new">＋ New blank DAG</button>
         <div class="dg-save-row">
           <input id="cfg-name" placeholder="name…" spellcheck="false">
           <button data-cfg="save">Save</button>
