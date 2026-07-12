@@ -188,18 +188,19 @@ describe('svg / html', () => {
 describe('swig transform', () => {
   const base = () => layout(formula.parse('exposure: A\noutcome: Y\nconfounder: L\nY ~ A + L\nA ~ L').model);
 
-  it('splits the treatment into a regime node with reads/cfedge edges', () => {
+  it('splits the treatment into a fixed-value node with a cfedge, using potential-outcome notation', () => {
     const m = intervene(base(), 'A');
     expect(m.meta.kind).toBe('swig');
-    const regime = m.nodes.find((n) => n.style === 'regime');
-    expect(regime).toBeTruthy();
-    // regime reads L (a parent of A) and pushes to Y (a former child of A)
-    expect(m.edges.some((e) => e.from === 'L' && e.to === regime.id && e.style === 'reads')).toBe(true);
-    expect(m.edges.some((e) => e.from === regime.id && e.to === 'Y' && e.style === 'cfedge')).toBe(true);
-    // the observed A -> Y causal edge is gone (regime causes the counterfactual)
+    const fixed = m.nodes.find((n) => n.style === 'fixed');
+    expect(fixed).toBeTruthy();
+    expect(fixed.label).toBe('$a$');
+    // no reads edges: the fixed value has no incoming edges of its own
+    expect(m.edges.some((e) => e.to === fixed.id)).toBe(false);
+    expect(m.edges.some((e) => e.from === fixed.id && e.to === 'Y' && e.style === 'cfedge')).toBe(true);
+    // the observed A -> Y causal edge is gone (the fixed value causes the counterfactual)
     expect(m.edges.some((e) => e.from === 'A' && e.to === 'Y' && e.style === 'causal')).toBe(false);
-    // Y is counterfactual
-    expect(m.nodes.find((n) => n.id === 'Y').label).toMatch(/\^\{s\}/);
+    // Y is relabelled with the potential-outcome argument
+    expect(m.nodes.find((n) => n.id === 'Y').label).toBe('$Y(a)$');
     expect(m.swig.interventions[0].node).toBe('A');
   });
 
@@ -207,10 +208,30 @@ describe('swig transform', () => {
     const m = intervene(base(), 'A');
     const tex = tikz.emit(m);
     expect(tex).toMatch(/\\splitbar\{A\}/);
-    expect(tex).toMatch(/\\node\[regime\]/);
+    expect(tex).toMatch(/\\node\[fixed\]/);
     const back = tikz.parse(tex).model;
     expect(back.meta.kind).toBe('swig');
-    expect(back.nodes.some((n) => n.style === 'regime')).toBe(true);
+    expect(back.nodes.some((n) => n.style === 'fixed')).toBe(true);
+  });
+
+  it('merges into an existing parenthetical instead of stacking a second one', () => {
+    const m = formula.parse('exposure: A\noutcome: Y\nconfounder: L\nY ~ A + L\nA ~ L').model;
+    m.nodes.find((n) => n.id === 'Y').label = '$Y(u)$';
+    const swigged = intervene(layout(m), 'A');
+    const label = swigged.nodes.find((n) => n.id === 'Y').label;
+    expect(label).toBe('$Y(u, a)$');
+  });
+
+  it('supports a two-part intervention with accumulated arguments in order', () => {
+    // A -> M -> Y, A -> Y (M is itself intervened on, downstream of A)
+    const m = layout(formula.parse('exposure: A\nmediator: M\noutcome: Y\nY ~ A + M\nM ~ A').model);
+    const swigged = intervene(m, ['A', 'M']);
+    expect(swigged.nodes.filter((n) => n.style === 'fixed').map((n) => n.label)).toEqual(['$a$', '$m$']);
+    // M is a descendant of A, so its own (kept) node picks up A's argument
+    expect(swigged.nodes.find((n) => n.id === 'M').label).toBe('$M(a)$');
+    // Y is downstream of both, in the order given
+    expect(swigged.nodes.find((n) => n.id === 'Y').label).toBe('$Y(a, m)$');
+    expect(swigged.swig.interventions.map((iv) => iv.node)).toEqual(['A', 'M']);
   });
 });
 

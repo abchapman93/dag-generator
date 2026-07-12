@@ -41,6 +41,9 @@ export function toSVG(model, opts = {}) {
 
   const edgeSVG = model.edges.map((e) => renderEdge(e, pos, nodes, mode)).join('\n');
   const nodeSVG = nodes.map((n) => renderNode(n, pos[n.id], mode)).join('\n');
+  const splitSVG = (model.swig?.interventions || [])
+    .map((iv) => renderSplitbar(nodeById(nodes, iv.node), pos[iv.node], mode))
+    .join('\n');
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${round(W)} ${round(H)}" width="${round(W)}" height="${round(H)}" font-family="Georgia, 'Times New Roman', serif">`,
@@ -48,6 +51,7 @@ export function toSVG(model, opts = {}) {
     `<rect width="100%" height="100%" fill="${opts.background || 'transparent'}"/>`,
     edgeSVG,
     nodeSVG,
+    splitSVG,
     '</svg>',
   ].join('\n');
 }
@@ -131,6 +135,14 @@ function trim(p, ux, uy, v) {
 }
 
 function nodeById(nodes, id) { return nodes.find((n) => n.id === id) || { style: 'rv' }; }
+
+// Vertical orange bar at the treatment node's right edge, marking the SWIG split.
+function renderSplitbar(node, p, mode) {
+  if (!node || !p) return '';
+  const v = visual(node, mode);
+  const x = round(p.x + (v.rx || 13));
+  return `<line x1="${x}" y1="${round(p.y - 16)}" x2="${x}" y2="${round(p.y + 16)}" stroke="#e07a1f" stroke-width="2.2"/>`;
+}
 
 function marker(style, color) {
   return `<marker id="mk-${style}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${color}"/></marker>`;
