@@ -13,12 +13,37 @@ import { intervene } from '/engine/swig.mjs';
 import { NODE_STYLES, EDGE_STYLES, ROLES, cloneModel } from '/engine/model.mjs';
 import { createCanvas } from '/canvas.mjs';
 
-const START = 'exposure: A\noutcome: Y\nconfounder: L\nunmeasured: U\nY ~ A + L + U\nA ~ L + U';
+// Default DAG loaded on a fresh open (Alec's paper DAG). Canonical TikZ so its
+// coordinates are preserved verbatim.
+const START = [
+  '\\node[rv](A) at (1,-1) {$A$};',
+  '\\node[rv](X) at (1,1) {$X$};',
+  '\\node[rv](H0) at (3,-1) {$H0$};',
+  '\\node[rv](V0) at (3,1) {$V0$};',
+  '\\node[rv](H1) at (5,-1) {$H1$};',
+  '\\node[rv](V1) at (5,1) {$V1$};',
+  '\\node[rv](Hs) at (7,1) {$H^{*}$};',
+  '\\draw[causal] (X) to (A);',
+  '\\draw[causal] (A) to (H0);',
+  '\\draw[causal] (X) to (H0);',
+  '\\draw[causal] (H0) to (V0);',
+  '\\draw[causal] (A) to (V0);',
+  '\\draw[causal] (X) to (V0);',
+  '\\draw[causal] (H0) to (H1);',
+  '\\draw[causal] (H0) to (V1);',
+  '\\draw[causal] (X) to (V1);',
+  '\\draw[causal] (A) to (V1);',
+  '\\draw[causal] (H1) to (Hs);',
+  '\\draw[causal] (V1) to (Hs);',
+  '\\draw[causal] (H1) to (V1);',
+  '\\draw[causal] (V0) to (H1);',
+].join('\n');
 
 export function mount({ stage }) {
   stage.innerHTML = TEMPLATE;
   const $ = (sel) => stage.querySelector(sel);
-  let model = layout(formula.parse(START).model);
+  let model = tikz.parse(START).model;
+  model.meta.style = 'informal';
   let renderStyle = 'informal';
   let preLayout = null;  // snapshot for one-step "revert layout"
   let currentSlug = null, currentName = '';  // the open saved-config, if any
