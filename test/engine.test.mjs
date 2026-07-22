@@ -119,6 +119,20 @@ describe('tikz canonical grammar', () => {
     expect(tikz.parse(tikz.emit(m2)).model.edges[0].bend).toBe(-15);
   });
 
+  it('emits a TikZ bend that curves the same way the SVG/canvas renderer does', () => {
+    // A -> Y is a plain left-to-right edge. svg.mjs (which the app canvas
+    // mirrors) sags a positive bend toward larger pixel-y, i.e. below the
+    // line. TikZ's own "bend left" for a rightward edge curves *above* the
+    // line (+y, since TikZ is y-up) — so a positive e.bend must map to
+    // "bend right" in TikZ to reproduce the same visual sag. Regression test
+    // for the app-canvas vs .tex-export mismatch bug.
+    const m = emptyModel({ nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'Y', x: 3, y: 0 }], edges: [{ from: 'A', to: 'Y', style: 'causal', bend: 20 }] });
+    const svg = toSVG(m, { style: 'manuscript' });
+    const path = /<path d="M([\d.]+),([\d.]+) Q([\d.]+),([\d.]+)/.exec(svg);
+    expect(Number(path[4])).toBeGreaterThan(Number(path[2])); // control point below the baseline
+    expect(tikz.emit(m)).toContain('bend right=20');
+  });
+
   it('flags off-grammar constructs but keeps valid lines', () => {
     const src = [
       '\\begin{tikzpicture}',

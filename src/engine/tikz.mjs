@@ -50,7 +50,10 @@ export function emit(model, opts = {}) {
     for (const iv of model.swig.interventions) body.push(`  \\splitbar{${iv.node}}{${iv.regimeLabel}};`);
   }
   for (const e of model.edges) {
-    const bend = e.bend ? `[bend ${e.bend > 0 ? 'left' : 'right'}=${Math.abs(e.bend)}]` : '';
+    // e.bend's sign convention is fixed by the canvas/SVG renderer (screen-space
+    // offset direction), which is mirrored relative to TikZ's own y-up bend
+    // left/right — see test/engine.test.mjs for the concrete direction check.
+    const bend = e.bend ? `[bend ${e.bend > 0 ? 'right' : 'left'}=${Math.abs(e.bend)}]` : '';
     body.push(`  \\draw[${e.style}] (${e.from}) to${bend} (${e.to});`);
   }
   body.push(`\\end{tikzpicture}`);
@@ -117,7 +120,7 @@ export function parse(text) {
       let bend = 0;
       if (m[3]) {
         const b = BEND_RE.exec(m[3]);
-        if (b) bend = (b[1] === 'left' ? 1 : -1) * (b[2] ? parseInt(b[2], 10) : 30);
+        if (b) bend = (b[1] === 'right' ? 1 : -1) * (b[2] ? parseInt(b[2], 10) : 30);
         else flags.push({ line: i + 1, why: `unsupported edge option '${m[3]}' (rendered straight, not editable)` });
       }
       model.edges.push({ from: m[2], to: m[4], style, bend });
