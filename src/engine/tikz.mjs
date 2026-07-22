@@ -39,7 +39,7 @@ export const STYLE_BLOCK = `\\usetikzlibrary{positioning, arrows.meta, fit, back
 export function emit(model, opts = {}) {
   const mode = opts.wrap || 'picture'; // 'picture' | 'standalone' | 'figure'
   const sep = model.meta?.nodeSep || 1;
-  const swigStyle = model.meta?.swigStyle || 'paren';
+  const swigStyle = model.meta?.swigStyle || 'superscript';
   const body = [];
 
   body.push(`\\begin{tikzpicture}[node distance=${10 * sep}mm and ${14 * sep}mm]`);

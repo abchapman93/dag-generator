@@ -20,8 +20,8 @@ export const EDGE_STYLES = ['causal', 'reads', 'cfedge', 'det', 'biasing', 'bloc
 export const ROLES = ['exposure', 'outcome', 'confounder', 'mediator', 'collider', 'instrument', 'covariate', 'latent'];
 export const KINDS = ['dag', 'swig'];
 export const RENDER_STYLES = ['informal', 'manuscript'];
-// How a SWIG's potential-outcome argument list is displayed: 'paren' -- $Y(\cfarg{a})$
-// (the default, matching swig-template.tex) -- or 'superscript' -- $Y^{\cfarg{a}}$.
+// How a SWIG's potential-outcome argument list is displayed: 'superscript' -- $Y^{\cfarg{a}}$
+// (the default) -- or 'paren' -- $Y(\cfarg{a})$ (matching swig-template.tex).
 // Document-wide, applied at render/emit time (see formatSwigLabel in swig.mjs); the
 // stored node.label always stays in canonical paren form.
 export const SWIG_STYLES = ['paren', 'superscript'];
@@ -40,7 +40,7 @@ export const ROLE_TO_STYLE = {
 
 export function emptyModel(overrides = {}) {
   return {
-    meta: { kind: 'dag', style: 'informal', title: '', nodeSep: 1, swigStyle: 'paren', ...(overrides.meta || {}) },
+    meta: { kind: 'dag', style: 'informal', title: '', nodeSep: 1, swigStyle: 'superscript', ...(overrides.meta || {}) },
     nodes: overrides.nodes ? overrides.nodes.map(normalizeNode) : [],
     edges: overrides.edges ? overrides.edges.map(normalizeEdge) : [],
     ...(overrides.swig ? { swig: overrides.swig } : {}),

@@ -29,7 +29,7 @@ export function createCanvas(host, cbs) {
   svg.setAttribute('class', 'dg-canvas');
   host.appendChild(svg);
 
-  let model = null, style = 'informal', swigStyle = 'paren', view = null;
+  let model = null, style = 'informal', swigStyle = 'superscript', view = null;
   let selection = null;      // { type:'node'|'edge', id|index }
   let mode = 'select';       // 'select' | 'addEdge'
   let edgeFrom = null;       // pending source in addEdge mode

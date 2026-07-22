@@ -27,7 +27,7 @@ const EDGE_COLOR = {
 
 export function toSVG(model, opts = {}) {
   const mode = opts.style || model.meta?.style || 'informal';
-  const swigStyle = opts.swigStyle || model.meta?.swigStyle || 'paren';
+  const swigStyle = opts.swigStyle || model.meta?.swigStyle || 'superscript';
   const cell = opts.cell || CELL;
   const nodes = model.nodes;
 

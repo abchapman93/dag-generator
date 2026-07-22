@@ -45,7 +45,7 @@ export function mount({ stage }) {
   let model = tikz.parse(START).model;
   model.meta.style = 'informal';
   let renderStyle = 'informal';
-  let swigStyle = 'paren';
+  let swigStyle = 'superscript';
   let preLayout = null;  // snapshot for one-step "revert layout"
   let currentSlug = null, currentName = '';  // the open saved-config, if any
   let loading = false, autosaveTimer = null; // autosave-to-current-config state
@@ -255,7 +255,7 @@ export function mount({ stage }) {
       loading = true;
       model = cfg.model;
       renderStyle = model.meta?.style || 'informal';
-      swigStyle = model.meta?.swigStyle || 'paren';
+      swigStyle = model.meta?.swigStyle || 'superscript';
       $('[data-act=style]').textContent = renderStyle === 'informal' ? 'Style: Informal' : 'Style: Manuscript';
       $('[data-act=swigStyle]').textContent = swigStyle === 'paren' ? 'SWIG: Y(a)' : 'SWIG: Yᵃ';
       setCurrent(slug, cfg.name); $('#cfg-name').value = cfg.name;  // set BEFORE regen so autosave targets the right config
@@ -382,10 +382,10 @@ export function mount({ stage }) {
         <h4>Edge <span class="dg-muted">${esc(e.from)} → ${esc(e.to)}</span></h4>
         ${field('style', select('e-style', EDGE_STYLES, e.style))}
         <label class="dg-field"><span>arc</span><span class="dg-arc">
-          <button data-arc="30" title="arc left">⤴</button>
+          <button data-arc="-30" title="arc left">⤴</button>
           <button data-arc="0" title="straight">—</button>
-          <button data-arc="-30" title="arc right">⤵</button>
-          <input id="e-bend" type="number" step="5" value="${e.bend}" title="+left / −right (degrees)">
+          <button data-arc="30" title="arc right">⤵</button>
+          <input id="e-bend" type="number" step="5" value="${e.bend}" title="+right / −left (degrees)">
         </span></label>
         <p class="dg-muted">…or drag the edge on the canvas to arc it.</p>`;
       $('#e-style').addEventListener('change', (ev) => { e.style = ev.target.value; canvas.rerender(); regenPanels(); invalidateRevert(); });
@@ -440,7 +440,7 @@ const TEMPLATE = `
     <strong class="dg-brand">dag-generator</strong>
     <span class="dg-current" id="dg-current"></span>
     <button class="dg-btn" data-act="style">Style: Informal</button>
-    <button class="dg-btn" data-act="swigStyle">SWIG: Y(a)</button>
+    <button class="dg-btn" data-act="swigStyle">SWIG: Yᵃ</button>
     <span class="dg-sep"></span>
     <button class="dg-btn" data-act="addNode">+ node</button>
     <button class="dg-btn" data-act="addEdge">+ edge</button>

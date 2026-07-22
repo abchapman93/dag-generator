@@ -361,7 +361,8 @@ describe('swig transform', () => {
   it('formatSwigLabel reformats paren notation into superscript at render/emit time only', () => {
     expect(formatSwigLabel('$Y(\\cfarg{a})$', 'superscript')).toBe('$Y^{\\cfarg{a}}$');
     expect(formatSwigLabel('$Y(\\cfarg{a}, \\cfarg{m})$', 'superscript')).toBe('$Y^{\\cfarg{a}, \\cfarg{m}}$');
-    // paren is the default and a no-op; labels with no argument list pass through untouched
+    // 'paren' is a no-op (the stored label is already in that form); labels with
+    // no argument list pass through untouched regardless of style
     expect(formatSwigLabel('$Y(\\cfarg{a})$', 'paren')).toBe('$Y(\\cfarg{a})$');
     expect(formatSwigLabel('$a$', 'superscript')).toBe('$a$');
     expect(formatSwigLabel('$A$', 'superscript')).toBe('$A$');
@@ -371,17 +372,17 @@ describe('swig transform', () => {
     expect(formatSwigLabel('$H^{*}(\\cfarg{a})$', 'superscript')).toBe('$H^{*, \\cfarg{a}}$');
   });
 
-  it('meta.swigStyle="superscript" changes tikz emit and SVG export, not the stored label', () => {
+  it('defaults to superscript notation in tikz emit and SVG export, without touching the stored label', () => {
     const m = intervene(base(), 'A');
-    expect(m.nodes.find((n) => n.id === 'Y').label).toBe('$Y(\\cfarg{a})$'); // stored form unaffected
+    expect(m.nodes.find((n) => n.id === 'Y').label).toBe('$Y(\\cfarg{a})$'); // stored form always stays paren
 
-    m.meta.swigStyle = 'superscript';
+    // default (no meta.swigStyle set) is superscript
     expect(tikz.emit(m)).toMatch(/\\node\[rv\]\(Y\).*\{\$Y\^\{\\cfarg\{a\}\}\$\}/);
     expect(toSVG(m)).toContain("baseline-shift='super'");
     expect(toSVG(m)).toContain("<tspan fill='#e07a1f'>a</tspan>");
 
-    // default ('paren') still emits the parenthetical form
-    delete m.meta.swigStyle;
+    // opting into 'paren' still emits the parenthetical form
+    m.meta.swigStyle = 'paren';
     expect(tikz.emit(m)).toMatch(/\{\$Y\(\\cfarg\{a\}\)\$\}/);
   });
 });

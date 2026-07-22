@@ -22,7 +22,7 @@ const LEGEND = {
 
 export function toHTML(model, opts = {}) {
   const mode = opts.style || model.meta?.style || 'informal';
-  const swigStyle = opts.swigStyle || model.meta?.swigStyle || 'paren';
+  const swigStyle = opts.swigStyle || model.meta?.swigStyle || 'superscript';
   const title = model.meta?.title || 'Causal diagram';
   const svg = toSVG(model, { style: mode, swigStyle, background: 'transparent' });
   const legend = (LEGEND[mode] || [])
