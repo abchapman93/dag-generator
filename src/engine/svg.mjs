@@ -6,6 +6,8 @@
 // Pure string builder — no DOM. Used for SVG/HTML/PNG export and to seed the app
 // canvas. Interactivity (drag) lives in the frontend, not here.
 
+import { formatSwigLabel } from './swig.mjs';
+
 const CELL = 70; // px per grid unit
 const PAD = 46;
 
@@ -25,6 +27,7 @@ const EDGE_COLOR = {
 
 export function toSVG(model, opts = {}) {
   const mode = opts.style || model.meta?.style || 'informal';
+  const swigStyle = opts.swigStyle || model.meta?.swigStyle || 'paren';
   const cell = opts.cell || CELL;
   const nodes = model.nodes;
 
@@ -40,7 +43,7 @@ export function toSVG(model, opts = {}) {
   const defs = [...used].map((s) => marker(s, EDGE_COLOR[s] || '#555')).join('');
 
   const edgeSVG = model.edges.map((e) => renderEdge(e, pos, nodes, mode)).join('\n');
-  const nodeSVG = nodes.map((n) => renderNode(n, pos[n.id], mode)).join('\n');
+  const nodeSVG = nodes.map((n) => renderNode(n, pos[n.id], mode, swigStyle)).join('\n');
   const splitSVG = (model.swig?.interventions || [])
     .map((iv) => renderSplitbar(pos[iv.node], pos[iv.regimeLabel]))
     .join('\n');
@@ -84,9 +87,9 @@ function visual(node, mode) {
   return { shape: 'rrect', fill: '#ffffff', stroke: '#c9ced6', text: '#1a1c22', rx: 30, ry: 22 };
 }
 
-function renderNode(node, p, mode) {
+function renderNode(node, p, mode, swigStyle) {
   const v = visual(node, mode);
-  const label = `<text x="${round(p.x)}" y="${round(p.y)}" text-anchor="middle" dominant-baseline="central" font-style="italic" font-size="19" fill="${v.text}">${tex2disp(node.label)}</text>`;
+  const label = `<text x="${round(p.x)}" y="${round(p.y)}" text-anchor="middle" dominant-baseline="central" font-style="italic" font-size="19" fill="${v.text}">${tex2disp(formatSwigLabel(node.label, swigStyle))}</text>`;
   let shape = '';
   const sw = 1.6;
   const dash = v.dashed ? ' stroke-dasharray="5 4"' : '';

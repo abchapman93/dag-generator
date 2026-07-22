@@ -4,6 +4,7 @@
 // getScreenCTM so hit-testing is correct at any display scale.
 
 import { tex2disp } from '/engine/svg.mjs';
+import { formatSwigLabel } from '/engine/swig.mjs';
 
 const CELL = 74;
 const MARGIN = 1.2;
@@ -28,7 +29,7 @@ export function createCanvas(host, cbs) {
   svg.setAttribute('class', 'dg-canvas');
   host.appendChild(svg);
 
-  let model = null, style = 'informal', view = null;
+  let model = null, style = 'informal', swigStyle = 'paren', view = null;
   let selection = null;      // { type:'node'|'edge', id|index }
   let mode = 'select';       // 'select' | 'addEdge'
   let edgeFrom = null;       // pending source in addEdge mode
@@ -153,7 +154,7 @@ export function createCanvas(host, cbs) {
       shape = `<circle cx="${p.x}" cy="${p.y}" r="${v.rx}" fill="none" stroke="#2f6df6" stroke-width="1.5" stroke-dasharray="3 3"/>`;
     }
     const hit = `<circle cx="${p.x}" cy="${p.y}" r="${Math.max(v.rx, v.ry)}" fill="#fff" opacity="0"/>`;
-    const label = `<text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" font-style="italic" font-size="19" fill="${v.text}" style="pointer-events:none">${tex2disp(n.label)}</text>`;
+    const label = `<text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" font-style="italic" font-size="19" fill="${v.text}" style="pointer-events:none">${tex2disp(formatSwigLabel(n.label, swigStyle))}</text>`;
     return `<g class="dg-node" data-id="${n.id}">${shape}${hit}${label}</g>`;
   }
 
@@ -257,6 +258,7 @@ export function createCanvas(host, cbs) {
   return {
     setModel(m, { refit = true } = {}) { model = m; if (refit) { fit(m); zoom = 1; pan = { x: 0, y: 0 }; } render(); },
     setStyle(s) { style = s; render(); },
+    setSwigStyle(s) { swigStyle = s; render(); },
     setMode(m) { mode = m; edgeFrom = null; render(); cbs.onModeChange?.(mode); },
     getMode() { return mode; },
     refit() { fit(model); zoom = 1; pan = { x: 0, y: 0 }; render(); cbs.onZoom?.(zoom); },

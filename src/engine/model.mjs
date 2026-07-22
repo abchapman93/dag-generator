@@ -3,7 +3,7 @@
 //
 // Model shape:
 //   {
-//     meta:  { kind, style, title, nodeSep },
+//     meta:  { kind, style, title, nodeSep, swigStyle },
 //     nodes: [ { id, label, x, y, style, role } ],
 //     edges: [ { from, to, style, bend } ],
 //     swig?: { interventions: [ { node, regimeLabel } ] }
@@ -20,6 +20,11 @@ export const EDGE_STYLES = ['causal', 'reads', 'cfedge', 'det', 'biasing', 'bloc
 export const ROLES = ['exposure', 'outcome', 'confounder', 'mediator', 'collider', 'instrument', 'covariate', 'latent'];
 export const KINDS = ['dag', 'swig'];
 export const RENDER_STYLES = ['informal', 'manuscript'];
+// How a SWIG's potential-outcome argument list is displayed: 'paren' -- $Y(\cfarg{a})$
+// (the default, matching swig-template.tex) -- or 'superscript' -- $Y^{\cfarg{a}}$.
+// Document-wide, applied at render/emit time (see formatSwigLabel in swig.mjs); the
+// stored node.label always stays in canonical paren form.
+export const SWIG_STYLES = ['paren', 'superscript'];
 
 // A role, when set via the formula/dagitty DSL, implies a primitive tikz style.
 export const ROLE_TO_STYLE = {
@@ -35,7 +40,7 @@ export const ROLE_TO_STYLE = {
 
 export function emptyModel(overrides = {}) {
   return {
-    meta: { kind: 'dag', style: 'informal', title: '', nodeSep: 1, ...(overrides.meta || {}) },
+    meta: { kind: 'dag', style: 'informal', title: '', nodeSep: 1, swigStyle: 'paren', ...(overrides.meta || {}) },
     nodes: overrides.nodes ? overrides.nodes.map(normalizeNode) : [],
     edges: overrides.edges ? overrides.edges.map(normalizeEdge) : [],
     ...(overrides.swig ? { swig: overrides.swig } : {}),
@@ -111,6 +116,7 @@ export function validate(model) {
   const meta = model.meta || {};
   if (meta.kind && !KINDS.includes(meta.kind)) errors.push(`unknown kind '${meta.kind}'`);
   if (meta.style && !RENDER_STYLES.includes(meta.style)) errors.push(`unknown render style '${meta.style}'`);
+  if (meta.swigStyle && !SWIG_STYLES.includes(meta.swigStyle)) errors.push(`unknown swig style '${meta.swigStyle}'`);
 
   if (!Array.isArray(model.nodes)) errors.push('nodes is not an array');
   if (!Array.isArray(model.edges)) errors.push('edges is not an array');

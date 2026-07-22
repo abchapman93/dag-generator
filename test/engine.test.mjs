@@ -5,7 +5,7 @@ import * as tikz from '../src/engine/tikz.mjs';
 import { layout } from '../src/engine/layout.mjs';
 import { toSVG } from '../src/engine/svg.mjs';
 import { toHTML } from '../src/engine/html.mjs';
-import { intervene } from '../src/engine/swig.mjs';
+import { intervene, formatSwigLabel } from '../src/engine/swig.mjs';
 import { validate, emptyModel } from '../src/engine/model.mjs';
 
 // helpers: compare graph structure ignoring coordinates
@@ -342,6 +342,33 @@ describe('swig transform', () => {
     const at = (id) => swigged.nodes.find((n) => n.id === id).x;
     expect(at('H0')).toBe(at('V0'));
     expect(at('H1')).toBe(at('V1'));
+  });
+
+  it('formatSwigLabel reformats paren notation into superscript at render/emit time only', () => {
+    expect(formatSwigLabel('$Y(\\cfarg{a})$', 'superscript')).toBe('$Y^{\\cfarg{a}}$');
+    expect(formatSwigLabel('$Y(\\cfarg{a}, \\cfarg{m})$', 'superscript')).toBe('$Y^{\\cfarg{a}, \\cfarg{m}}$');
+    // paren is the default and a no-op; labels with no argument list pass through untouched
+    expect(formatSwigLabel('$Y(\\cfarg{a})$', 'paren')).toBe('$Y(\\cfarg{a})$');
+    expect(formatSwigLabel('$a$', 'superscript')).toBe('$a$');
+    expect(formatSwigLabel('$A$', 'superscript')).toBe('$A$');
+    // a base that already ends in its own superscript (e.g. $H^{*}$, given as a
+    // starting label before any intervention) must merge into that group rather
+    // than stack a second ^{...} -- LaTeX errors on a double superscript.
+    expect(formatSwigLabel('$H^{*}(\\cfarg{a})$', 'superscript')).toBe('$H^{*, \\cfarg{a}}$');
+  });
+
+  it('meta.swigStyle="superscript" changes tikz emit and SVG export, not the stored label', () => {
+    const m = intervene(base(), 'A');
+    expect(m.nodes.find((n) => n.id === 'Y').label).toBe('$Y(\\cfarg{a})$'); // stored form unaffected
+
+    m.meta.swigStyle = 'superscript';
+    expect(tikz.emit(m)).toMatch(/\\node\[rv\]\(Y\).*\{\$Y\^\{\\cfarg\{a\}\}\$\}/);
+    expect(toSVG(m)).toContain("baseline-shift='super'");
+    expect(toSVG(m)).toContain("<tspan fill='#e07a1f'>a</tspan>");
+
+    // default ('paren') still emits the parenthetical form
+    delete m.meta.swigStyle;
+    expect(tikz.emit(m)).toMatch(/\{\$Y\(\\cfarg\{a\}\)\$\}/);
   });
 });
 

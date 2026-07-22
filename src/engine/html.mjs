@@ -22,8 +22,9 @@ const LEGEND = {
 
 export function toHTML(model, opts = {}) {
   const mode = opts.style || model.meta?.style || 'informal';
+  const swigStyle = opts.swigStyle || model.meta?.swigStyle || 'paren';
   const title = model.meta?.title || 'Causal diagram';
-  const svg = toSVG(model, { style: mode, background: 'transparent' });
+  const svg = toSVG(model, { style: mode, swigStyle, background: 'transparent' });
   const legend = (LEGEND[mode] || [])
     .map(([fill, stroke, label]) => `<li><span class="sw" style="background:${fill};border-color:${stroke}"></span>${esc(label)}</li>`)
     .join('');

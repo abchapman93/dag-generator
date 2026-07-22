@@ -11,6 +11,7 @@
 // Recognised preamble/wrapper lines are ignored; everything else is flagged.
 
 import { emptyModel, defaultLabel, NODE_STYLES, EDGE_STYLES } from './model.mjs';
+import { formatSwigLabel } from './swig.mjs';
 
 // Inlined named-style block (mirror of tikz/dag-styles.tex) so standalone output
 // compiles with no external \input.
@@ -38,11 +39,12 @@ export const STYLE_BLOCK = `\\usetikzlibrary{positioning, arrows.meta, fit, back
 export function emit(model, opts = {}) {
   const mode = opts.wrap || 'picture'; // 'picture' | 'standalone' | 'figure'
   const sep = model.meta?.nodeSep || 1;
+  const swigStyle = model.meta?.swigStyle || 'paren';
   const body = [];
 
   body.push(`\\begin{tikzpicture}[node distance=${10 * sep}mm and ${14 * sep}mm]`);
   for (const n of model.nodes) {
-    body.push(`  \\node[${n.style}](${n.id}) at (${fmt(n.x)},${fmt(n.y)}) {${n.label}};`);
+    body.push(`  \\node[${n.style}](${n.id}) at (${fmt(n.x)},${fmt(n.y)}) {${formatSwigLabel(n.label, swigStyle)}};`);
   }
   if (model.swig?.interventions) {
     for (const iv of model.swig.interventions) body.push(`  \\splitbar{${iv.node}}{${iv.regimeLabel}};`);

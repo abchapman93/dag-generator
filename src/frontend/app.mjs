@@ -45,6 +45,7 @@ export function mount({ stage }) {
   let model = tikz.parse(START).model;
   model.meta.style = 'informal';
   let renderStyle = 'informal';
+  let swigStyle = 'paren';
   let preLayout = null;  // snapshot for one-step "revert layout"
   let currentSlug = null, currentName = '';  // the open saved-config, if any
   let loading = false, autosaveTimer = null; // autosave-to-current-config state
@@ -77,7 +78,7 @@ export function mount({ stage }) {
   Object.entries(panels).forEach(([key, p]) => {
     p.el.addEventListener('input', debounce(() => {
       const { model: m, flags, refit } = p.parse(p.el.value);
-      model = m; model.meta.style = renderStyle;
+      model = m; model.meta.style = renderStyle; model.meta.swigStyle = swigStyle;
       canvas.setModel(model, { refit });
       regenPanels(key);
       status(flags.length ? 'warn' : 'ok', flags);
@@ -98,6 +99,13 @@ export function mount({ stage }) {
     model.meta.style = renderStyle;
     canvas.setStyle(renderStyle);
     e.target.textContent = renderStyle === 'informal' ? 'Style: Informal' : 'Style: Manuscript';
+    regenPanels(); invalidateRevert();
+  });
+  $('[data-act=swigStyle]').addEventListener('click', (e) => {
+    swigStyle = swigStyle === 'paren' ? 'superscript' : 'paren';
+    model.meta.swigStyle = swigStyle;
+    canvas.setSwigStyle(swigStyle);
+    e.target.textContent = swigStyle === 'paren' ? 'SWIG: Y(a)' : 'SWIG: Yᵃ';
     regenPanels(); invalidateRevert();
   });
   $('[data-act=addNode]').addEventListener('click', () => {
@@ -122,7 +130,7 @@ export function mount({ stage }) {
   });
   $('[data-act=revert]').addEventListener('click', () => {
     if (!preLayout) return;
-    model = preLayout; preLayout = null; model.meta.style = renderStyle;
+    model = preLayout; preLayout = null; model.meta.style = renderStyle; model.meta.swigStyle = swigStyle;
     canvas.setModel(model, { refit: true }); regenPanels();
     showRevert(false); status('ok', null, 'layout reverted');
   });
@@ -162,7 +170,7 @@ export function mount({ stage }) {
   async function doAutosave() {
     if (!currentSlug) return;
     const slug = currentSlug, name = currentName;
-    model.meta.style = renderStyle; model.meta.title = name;
+    model.meta.style = renderStyle; model.meta.swigStyle = swigStyle; model.meta.title = name;
     try {
       const res = await fetch('/dag/api/configs', {
         method: 'PUT', headers: { 'content-type': 'application/json' },
@@ -191,8 +199,10 @@ export function mount({ stage }) {
   function restore(serialized) {
     model = JSON.parse(serialized); lastSnapshot = serialized;
     renderStyle = model.meta?.style || renderStyle;
+    swigStyle = model.meta?.swigStyle || swigStyle;
     $('[data-act=style]').textContent = renderStyle === 'informal' ? 'Style: Informal' : 'Style: Manuscript';
-    canvas.setStyle(renderStyle); canvas.setModel(model, { refit: false }); canvas.clearSelection();
+    $('[data-act=swigStyle]').textContent = swigStyle === 'paren' ? 'SWIG: Y(a)' : 'SWIG: Yᵃ';
+    canvas.setStyle(renderStyle); canvas.setSwigStyle(swigStyle); canvas.setModel(model, { refit: false }); canvas.clearSelection();
     regenPanels(); renderInspector(null); invalidateRevert();
   }
   function undo() {
@@ -225,7 +235,7 @@ export function mount({ stage }) {
   }
   async function saveConfig() {
     const name = ($('#cfg-name').value || currentName || 'dag').trim();
-    model.meta.style = renderStyle; model.meta.title = name;
+    model.meta.style = renderStyle; model.meta.swigStyle = swigStyle; model.meta.title = name;
     try {
       const res = await fetch('/dag/api/configs', {
         method: 'PUT', headers: { 'content-type': 'application/json' },
@@ -245,9 +255,11 @@ export function mount({ stage }) {
       loading = true;
       model = cfg.model;
       renderStyle = model.meta?.style || 'informal';
+      swigStyle = model.meta?.swigStyle || 'paren';
       $('[data-act=style]').textContent = renderStyle === 'informal' ? 'Style: Informal' : 'Style: Manuscript';
+      $('[data-act=swigStyle]').textContent = swigStyle === 'paren' ? 'SWIG: Y(a)' : 'SWIG: Yᵃ';
       setCurrent(slug, cfg.name); $('#cfg-name').value = cfg.name;  // set BEFORE regen so autosave targets the right config
-      canvas.setStyle(renderStyle); canvas.setModel(model, { refit: true });
+      canvas.setStyle(renderStyle); canvas.setSwigStyle(swigStyle); canvas.setModel(model, { refit: true });
       resetHistory(); regenPanels(); renderInspector(null); invalidateRevert();
       $('.dg-configs').open = false;
       status('ok', null, `opened “${cfg.name}”`);
@@ -266,7 +278,7 @@ export function mount({ stage }) {
     if (model.nodes.length && !currentSlug && !confirm('Start a new blank DAG? Unsaved changes will be cleared.')) return;
     await flushAutosave();   // persist the config we're leaving, if any
     loading = true;
-    model = { meta: { kind: 'dag', style: renderStyle, title: '', nodeSep: 1 }, nodes: [], edges: [] };
+    model = { meta: { kind: 'dag', style: renderStyle, swigStyle, title: '', nodeSep: 1 }, nodes: [], edges: [] };
     setCurrent(null, ''); $('#cfg-name').value = '';
     canvas.setModel(model, { refit: true });
     resetHistory(); regenPanels(); renderInspector(null); invalidateRevert();
@@ -289,7 +301,7 @@ export function mount({ stage }) {
   };
 
   async function doExport(fmt) {
-    model.meta.style = renderStyle;
+    model.meta.style = renderStyle; model.meta.swigStyle = swigStyle;
     const [ext, mime] = EXPORT_META[fmt];
     const base = (currentName || model.meta.title || 'dag').replace(/\W+/g, '-').toLowerCase() || 'dag';
     const name = `${base}.${ext}`;
@@ -299,8 +311,8 @@ export function mount({ stage }) {
       if (fmt === 'formula') return formula.emit(model);
       if (fmt === 'dagitty') return dagitty.emit(model);
       if (fmt === 'tex') return tikz.emit(model, { wrap: 'standalone' });
-      if (fmt === 'svg') return toSVG(model, { style: renderStyle });
-      if (fmt === 'html') return toHTML(model, { style: renderStyle });
+      if (fmt === 'svg') return toSVG(model, { style: renderStyle, swigStyle });
+      if (fmt === 'html') return toHTML(model, { style: renderStyle, swigStyle });
       const format = fmt === 'svg-tex' ? 'svg' : fmt;  // compiled formats
       status('compiling', null, 'compiling with LaTeX…');
       const res = await fetch('/dag/api/compile', {
@@ -360,7 +372,7 @@ export function mount({ stage }) {
       $('#i-style').addEventListener('change', (e) => { n.style = e.target.value; canvas.rerender(); regenPanels(); invalidateRevert(); });
       $('#i-role').addEventListener('change', (e) => { const v = e.target.value; if (v === '(none)') delete n.role; else n.role = v; canvas.rerender(); regenPanels(); invalidateRevert(); });
       $('#i-intervene').addEventListener('click', () => {
-        model = intervene(model, n.id); model.meta.style = renderStyle;
+        model = intervene(model, n.id); model.meta.style = renderStyle; model.meta.swigStyle = swigStyle;
         canvas.setModel(model, { refit: true }); canvas.clearSelection();
         regenPanels(); renderInspector(null); invalidateRevert(); status('ok', null, 'SWIG: split treatment into fixed value');
       });
@@ -428,6 +440,7 @@ const TEMPLATE = `
     <strong class="dg-brand">dag-generator</strong>
     <span class="dg-current" id="dg-current"></span>
     <button class="dg-btn" data-act="style">Style: Informal</button>
+    <button class="dg-btn" data-act="swigStyle">SWIG: Y(a)</button>
     <span class="dg-sep"></span>
     <button class="dg-btn" data-act="addNode">+ node</button>
     <button class="dg-btn" data-act="addEdge">+ edge</button>

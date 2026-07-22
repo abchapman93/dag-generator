@@ -105,6 +105,24 @@ function appendArgs(label, args) {
   return `$${inner}(${wrapped.join(', ')})$`;
 }
 
+// Render/emit-time presentation of a potential-outcome label. The stored label is
+// always the canonical paren form ($Y(\cfarg{a})$); 'superscript' style reformats
+// the trailing argument list into $Y^{\cfarg{a}}$ instead. Labels with no argument
+// list (most nodes, and the plain `$a$` fixed-value nodes) pass through unchanged.
+export function formatSwigLabel(label, style) {
+  if (style !== 'superscript') return label;
+  const inner = String(label).replace(/^\$/, '').replace(/\$$/, '');
+  const m = inner.match(/^(.*)\(([^()]*)\)$/);
+  if (!m) return label;
+  const [, base, args] = m;
+  // A base that already ends in its own superscript (e.g. $H^{*}$, given as-is
+  // before any intervention) would otherwise stack a second ^{...} on top of it --
+  // invalid LaTeX ("double superscript"). Merge into the existing group instead.
+  const sup = base.match(/^(.*)\^\{([^}]*)\}$/) || base.match(/^(.*)\^(\S)$/);
+  if (sup) return `$${sup[1]}^{${sup[2]}, ${args}}$`;
+  return `$${base}^{${args}}$`;
+}
+
 function uniqueId(model, base) {
   const ids = new Set(model.nodes.map((n) => n.id));
   if (!ids.has(base)) return base;
