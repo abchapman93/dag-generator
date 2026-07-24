@@ -120,8 +120,13 @@ export function mount({ stage }) {
   });
   $('[data-act=del]').addEventListener('click', () => canvas.deleteSelection());
   $('[data-act=pointAt]').addEventListener('click', () => pointAt());   // main click: no note
-  $('[data-act=pointAtNote]').addEventListener('click', firePointAtWithNote);
-  $('#pointat-note').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); firePointAtWithNote(); } });
+  $('[data-act=pointAtNote]').addEventListener('click', () => sendFromMenu());
+  $('#pointat-note').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendFromMenu(); } });
+  // Quick replies: one click sends a canned note. With a selection it rides as a
+  // point-at (handles + crop); with nothing selected it's a plain message.
+  $('.dg-pointat-menu').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-qr]'); if (b) sendFromMenu(b.dataset.qr);
+  });
   $('[data-act=fit]').addEventListener('click', () => canvas.refit());
   $('[data-act=zoomIn]').addEventListener('click', () => canvas.zoomIn());
   $('[data-act=zoomOut]').addEventListener('click', () => canvas.zoomOut());
@@ -393,11 +398,13 @@ export function mount({ stage }) {
     status('ok', null, `${icon} ${what} — ${done}`);
   }
 
-  // The chevron dropdown: point at the current selection with a typed note, then
-  // clear the field and close the menu.
-  function firePointAtWithNote() {
+  // The chevron dropdown: send a signal, then clear the field and close the menu.
+  // A quick-reply preset and typed text combine, so a one-click category can carry
+  // a refinement: "Fix this: color — the leaves should follow provenance".
+  function sendFromMenu(preset) {
     const inp = $('#pointat-note');
-    pointAt(inp.value.trim() || undefined);
+    const note = [preset, inp.value.trim()].filter(Boolean).join(' — ');
+    pointAt(note || undefined);
     inp.value = '';
     const d = stage.querySelector('.dg-pointat-more'); if (d) d.open = false;
   }
@@ -532,6 +539,17 @@ const TEMPLATE = `
       <details class="dg-export dg-pointat-more">
         <summary class="dg-btn dg-pointat-chevron" title="send with a note / message">▾</summary>
         <div class="dg-menu dg-pointat-menu">
+          <p class="dg-qr-label">Fix this:</p>
+          <div class="dg-qr-row">
+            <button data-qr="Fix this: position">position</button>
+            <button data-qr="Fix this: text">text</button>
+            <button data-qr="Fix this: color">color</button>
+            <button data-qr="Fix this: shape">shape</button>
+          </div>
+          <div class="dg-qr-row">
+            <button data-qr="Looks good">✓ looks good</button>
+            <button data-qr="Done">done</button>
+          </div>
           <input id="pointat-note" placeholder="a note on the selection, or a message to Claude…" spellcheck="false">
           <button data-act="pointAtNote">✉ send</button>
         </div>

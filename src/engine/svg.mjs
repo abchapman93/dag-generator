@@ -75,6 +75,23 @@ export const FLOW = {
   leafNeg: { shape: 'rrect', fill: '#fbdcdc', stroke: '#c0392b', text: '#7f1d1d', rx: 34, ry: 22 },
 };
 
+// Auto-size a box's half-width to its label. The engine is headless (no DOM to
+// measure text), so approximate from visible glyph count at font-size 19 in the
+// serif face. GROWS ONLY — never below the style's base rx — so short-label DAG
+// nodes are unchanged and only long prose labels (decision trees) widen; this
+// makes the fast SVG renderer match what a LaTeX compile already does (its boxes
+// grow via `minimum size` + `inner sep`). Exported so the live canvas sizes boxes
+// identically — export and canvas must agree on geometry (parity invariant).
+const GLYPH_W = 9.2;     // px per visible glyph at ~font-size 19, Georgia
+const LABEL_PAD_X = 15;  // horizontal breathing room inside each side
+
+export function autoHalfWidth(label, baseRx) {
+  const visible = String(label ?? '')
+    .replace(/\\[a-zA-Z]+/g, ' ')   // a control word (\alpha) ≈ one glyph
+    .replace(/[${}^_\\]/g, '');
+  return Math.max(baseRx, (visible.length * GLYPH_W) / 2 + LABEL_PAD_X);
+}
+
 function visual(node, mode) {
   let v;
   if (FLOW[node.style]) {
@@ -112,6 +129,9 @@ function visual(node, mode) {
     const s = xcolorToHex(node.stroke); if (s) v.stroke = s;
   }
   const t = xcolorToHex(node.text); if (t) v.text = t;
+  if (v.shape === 'rect' || v.shape === 'rrect' || v.shape === 'diamond') {
+    v.rx = autoHalfWidth(node.label, v.rx);
+  }
   return v;
 }
 
@@ -143,9 +163,15 @@ function mixHex(c1, c2, t) {
   return `#${q(r1, r2)}${q(g1, g2)}${q(b1, b2)}`;
 }
 
+// Flowchart-family boxes carry prose labels ("No antibiotics"), so they render
+// upright; DAG nodes carry math variables ($A$), so they stay italic. Exported so
+// the live canvas (canvas.mjs) styles labels identically.
+export const UPRIGHT_STYLES = new Set(['decision', 'leaf', 'leafPos', 'leafNeg']);
+
 function renderNode(node, p, mode, swigStyle) {
   const v = visual(node, mode);
-  const label = `<text x="${round(p.x)}" y="${round(p.y)}" text-anchor="middle" dominant-baseline="central" font-style="italic" font-size="19" fill="${v.text}">${tex2disp(formatSwigLabel(node.label, swigStyle))}</text>`;
+  const fontStyle = UPRIGHT_STYLES.has(node.style) ? 'normal' : 'italic';
+  const label = `<text x="${round(p.x)}" y="${round(p.y)}" text-anchor="middle" dominant-baseline="central" font-style="${fontStyle}" font-size="19" fill="${v.text}">${tex2disp(formatSwigLabel(node.label, swigStyle))}</text>`;
   let shape = '';
   const sw = 1.6;
   const dash = v.dashed ? ' stroke-dasharray="5 4"' : '';

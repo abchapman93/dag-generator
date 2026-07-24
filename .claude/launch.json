@@ -5,7 +5,8 @@
       "name": "dag-generator",
       "runtimeExecutable": "node",
       "runtimeArgs": ["src/server/index.mjs"],
-      "port": 4180
+      "port": 4180,
+      "autoPort": true
     }
   ]
 }

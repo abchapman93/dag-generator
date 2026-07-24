@@ -3,7 +3,7 @@ import * as formula from '../src/engine/formula.mjs';
 import * as dagitty from '../src/engine/dagitty.mjs';
 import * as tikz from '../src/engine/tikz.mjs';
 import { layout } from '../src/engine/layout.mjs';
-import { toSVG, xcolorToHex } from '../src/engine/svg.mjs';
+import { toSVG, xcolorToHex, autoHalfWidth } from '../src/engine/svg.mjs';
 import { toHTML } from '../src/engine/html.mjs';
 import { intervene, formatSwigLabel } from '../src/engine/swig.mjs';
 import { validate, emptyModel } from '../src/engine/model.mjs';
@@ -256,6 +256,46 @@ describe('decision-tree grammar (edge labels + flowchart node styling)', () => {
     expect(svg).toContain('>Severe</text>');
     expect(svg).toMatch(/fill="#dcf5e3"/); // leafPos green box
     expect(svg).toMatch(/fill="#fbdcdc"/); // leafNeg red box
+  });
+
+  it('auto-sizes box width to the label, growing only', () => {
+    // grows only: a short label stays at the style's base half-width...
+    expect(autoHalfWidth('A', 34)).toBe(34);
+    expect(autoHalfWidth('', 34)).toBe(34);
+    // ...a long prose label widens past it, monotonically in length.
+    const wComorb = autoHalfWidth('Comorbidities', 34);
+    const wNoComorb = autoHalfWidth('No comorbidity', 34);
+    expect(wComorb).toBeGreaterThan(34);
+    expect(wNoComorb).toBeGreaterThan(wComorb);
+    // math markup doesn't inflate width ($A$ counts as one glyph, not three)
+    expect(autoHalfWidth('$A$', 34)).toBe(34);
+
+    // and it reaches the rendered box: the wide node's <rect> is wider.
+    const m = emptyModel({
+      nodes: [
+        { id: 'a', x: 0, y: 0, label: 'Comorbidities', style: 'decision' },
+        { id: 'b', x: 2, y: 0, label: 'Mild', style: 'decision' },
+      ],
+    });
+    const svg = toSVG(m, { style: 'informal' });
+    const widths = [...svg.matchAll(/<rect x="[^"]*" y="[^"]*" width="([\d.]+)"/g)].map((x) => Number(x[1]));
+    const wide = Math.max(...widths), narrow = Math.min(...widths);
+    expect(wide).toBeGreaterThan(narrow);
+  });
+
+  it('renders flowchart labels upright and DAG labels italic', () => {
+    const m = emptyModel({
+      nodes: [
+        { id: 'S', x: 0, y: 0, label: 'Severity', style: 'decision' },
+        { id: 'abx', x: 1, y: 0, label: 'Antibiotics', style: 'leaf' },
+        { id: 'A', x: 2, y: 0, label: '$A$', style: 'rv' },
+      ],
+    });
+    const svg = toSVG(layout(m), { style: 'informal' });
+    // flowchart boxes upright, DAG variable italic
+    expect(svg).toMatch(/font-style="normal"[^>]*>Severity</);
+    expect(svg).toMatch(/font-style="normal"[^>]*>Antibiotics</);
+    expect(svg).toMatch(/font-style="italic"[^>]*>A</);
   });
 
   it('maps xcolor overrides to hex for SVG and warns on comma-bearing colours', () => {

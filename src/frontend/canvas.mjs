@@ -3,7 +3,7 @@
 // callbacks; it never owns the model — app.mjs does. Uses an SVG viewBox +
 // getScreenCTM so hit-testing is correct at any display scale.
 
-import { tex2disp, xcolorToHex, FLOW } from '/engine/svg.mjs';
+import { tex2disp, xcolorToHex, FLOW, UPRIGHT_STYLES, autoHalfWidth } from '/engine/svg.mjs';
 import { formatSwigLabel } from '/engine/swig.mjs';
 
 const CELL = 74;
@@ -92,6 +92,9 @@ export function createCanvas(host, cbs) {
       const s = xcolorToHex(node.stroke); if (s) v.stroke = s;
     }
     const t = xcolorToHex(node.text); if (t) v.text = t;
+    if (v.shape === 'rect' || v.shape === 'rrect' || v.shape === 'diamond') {
+      v.rx = autoHalfWidth(node.label, v.rx);
+    }
     return v;
   }
 
@@ -195,7 +198,10 @@ export function createCanvas(host, cbs) {
       shape = `<circle cx="${p.x}" cy="${p.y}" r="${v.rx}" fill="none" stroke="#2f6df6" stroke-width="1.5" stroke-dasharray="3 3"/>`;
     }
     const hit = `<circle cx="${p.x}" cy="${p.y}" r="${Math.max(v.rx, v.ry)}" fill="#fff" opacity="0"/>`;
-    const label = `<text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" font-style="italic" font-size="19" fill="${v.text}" style="pointer-events:none">${tex2disp(formatSwigLabel(n.label, swigStyle))}</text>`;
+    // Flowchart boxes carry prose ("No antibiotics") → upright; DAG nodes carry
+    // math vars ($A$) → italic. Mirrors svg.mjs renderNode.
+    const fontStyle = UPRIGHT_STYLES.has(n.style) ? 'normal' : 'italic';
+    const label = `<text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" font-style="${fontStyle}" font-size="19" fill="${v.text}" style="pointer-events:none">${tex2disp(formatSwigLabel(n.label, swigStyle))}</text>`;
     return `<g class="dg-node" data-id="${n.id}">${shape}${hit}${label}</g>`;
   }
 
@@ -287,6 +293,10 @@ export function createCanvas(host, cbs) {
   // deselects, then drags to pan.
   svg.addEventListener('pointerdown', (ev) => {
     if (mode === 'addEdge') return;
+    // Node/edge presses already preventDefault; the empty canvas needs it too, or the
+    // browser starts a native text selection under the drag (shift-drag would band AND
+    // highlight the page). Covers the pan press for the same reason.
+    ev.preventDefault();
     if (ev.shiftKey) { const u = clientToUser(ev.clientX, ev.clientY); band = { x0: u.x, y0: u.y, x1: u.x, y1: u.y }; capture(svg, ev.pointerId); render(); return; }
     if (selection.length) { selection = []; cbs.onSelect?.(selection); }
     const ctm = svg.getScreenCTM();
@@ -295,16 +305,19 @@ export function createCanvas(host, cbs) {
     svg.style.cursor = 'grabbing';
     render();
   });
-  // Rubber-band → add every node inside the box (and every edge whose both ends are
-  // inside) to the selection set. A too-small box is a no-op (it was just a mis-click).
+  // Rubber-band → add every node whose BOX INTERSECTS the band (grazing it is enough;
+  // you shouldn't have to lasso a whole box to catch it) and every edge whose both ends
+  // are caught. A too-small box is a no-op (it was just a mis-click).
   function commitBand() {
     const minx = Math.min(band.x0, band.x1), maxx = Math.max(band.x0, band.x1);
     const miny = Math.min(band.y0, band.y1), maxy = Math.max(band.y0, band.y1);
     if (maxx - minx < 4 && maxy - miny < 4) return;
-    const pos = {}; model.nodes.forEach((n) => (pos[n.id] = { x: gx2px(n.x), y: gy2px(n.y) }));
-    const inside = (p) => p && p.x >= minx && p.x <= maxx && p.y >= miny && p.y <= maxy;
-    model.nodes.forEach((n) => { if (inside(pos[n.id]) && !isNodeSel(n.id)) selection.push({ type: 'node', id: n.id }); });
-    model.edges.forEach((e, i) => { if (inside(pos[e.from]) && inside(pos[e.to]) && !isEdgeSel(i)) selection.push({ type: 'edge', index: i }); });
+    // nodeVisual applies autoHalfWidth, so rx/ry are the true rendered half-extents.
+    const box = {};
+    model.nodes.forEach((n) => { const v = nodeVisual(n); box[n.id] = { x: gx2px(n.x), y: gy2px(n.y), rx: v.rx, ry: v.ry }; });
+    const hits = (id) => { const b = box[id]; return b && b.x + b.rx >= minx && b.x - b.rx <= maxx && b.y + b.ry >= miny && b.y - b.ry <= maxy; };
+    model.nodes.forEach((n) => { if (hits(n.id) && !isNodeSel(n.id)) selection.push({ type: 'node', id: n.id }); });
+    model.edges.forEach((e, i) => { if (hits(e.from) && hits(e.to) && !isEdgeSel(i)) selection.push({ type: 'edge', index: i }); });
     cbs.onSelect?.(selection);
   }
   function clientToUser(clientX, clientY) {
