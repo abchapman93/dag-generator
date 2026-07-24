@@ -3,10 +3,10 @@ import { mkdtemp, rm, readFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// emitPointAt reads its base dir at import time, so set the override *before*
+// emitSignal reads its base dir at import time, so set the override *before*
 // dynamically importing the module (static imports are hoisted above this).
-describe('point-at signal', () => {
-  let dir, emitPointAt;
+describe('signal bus', () => {
+  let dir, emitSignal;
   const readSignal = async (id) => JSON.parse(await readFile(join(dir, 'signals', `${id}.json`), 'utf8'));
   // Fields /session-attach + signals.py expect to be present on every signal.
   const SCHEMA = ['signal_id', 'kind', 'source', 'created_at', 'title', 'note',
@@ -16,12 +16,12 @@ describe('point-at signal', () => {
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'dg-webctx-'));
     process.env.DAG_GENERATOR_WEBCTX = dir;
-    ({ emitPointAt } = await import('../src/server/pointat.mjs'));
+    ({ emitSignal } = await import('../src/server/pointat.mjs'));
   });
   afterAll(async () => { await rm(dir, { recursive: true, force: true }); });
 
   it('writes a schema-complete signal for a node handle', async () => {
-    const r = await emitPointAt({ handle: '@node:severe', label: '$severe$', style: 'leaf' });
+    const r = await emitSignal({ handle: '@node:severe', label: '$severe$', style: 'leaf' });
     expect(r.handle).toBe('@node:severe');
     const sig = await readSignal(r.signal_id);
     for (const k of SCHEMA) expect(sig).toHaveProperty(k);
@@ -35,7 +35,7 @@ describe('point-at signal', () => {
 
   it('writes the crop PNG and points context_path at it', async () => {
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
-    const r = await emitPointAt({ handle: '@edge:A->Y', style: 'causal', png });
+    const r = await emitSignal({ handle: '@edge:A->Y', style: 'causal', png });
     expect(r.crop).toBeTruthy();
     await access(r.crop);                        // crop file exists on disk
     const sig = await readSignal(r.signal_id);
@@ -45,7 +45,7 @@ describe('point-at signal', () => {
   });
 
   it('emits one signal covering several handles (multi-select)', async () => {
-    const r = await emitPointAt({ handles: [
+    const r = await emitSignal({ handles: [
       { handle: '@node:X', label: '$X$', style: 'rv' },
       { handle: '@node:V0', label: '$V0$', style: 'rv' },
       { handle: '@edge:A->V1', style: 'causal' },
@@ -58,13 +58,35 @@ describe('point-at signal', () => {
   });
 
   it('carries an optional note, flattened', async () => {
-    const r = await emitPointAt({ handle: '@node:X', note: 'make this   green\nplease' });
+    const r = await emitSignal({ handle: '@node:X', note: 'make this   green\nplease' });
     const sig = await readSignal(r.signal_id);
     expect(sig.note).toBe('make this green please');   // whitespace/newlines flattened
   });
 
-  it('rejects a missing handle', async () => {
-    await expect(emitPointAt({})).rejects.toThrow(/handle/);
-    await expect(emitPointAt({ handles: [] })).rejects.toThrow(/handle/);
+  it('sends a bare message when nothing is selected', async () => {
+    const r = await emitSignal({ note: 'How many nodes are there now?' });
+    expect(r.handles).toEqual([]);
+    const sig = await readSignal(r.signal_id);
+    for (const k of SCHEMA) expect(sig).toHaveProperty(k);
+    expect(sig.kind).toBe('dag-message');
+    expect(sig.title).toBe('How many nodes are there now?');
+    expect(sig.note).toBe('How many nodes are there now?');
+    expect(sig.context_path).toBeNull();     // no selection → no crop
+  });
+
+  it('sends a blank ping with no selection and no note', async () => {
+    const r = await emitSignal({});
+    const sig = await readSignal(r.signal_id);
+    expect(sig.kind).toBe('dag-ping');
+    expect(sig.title).toBeTruthy();
+    expect(sig.note).toBeNull();
+    expect(sig.context_path).toBeNull();
+  });
+
+  it('drops a crop when there is no selection to point at', async () => {
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const r = await emitSignal({ note: 'hi', png });   // png ignored without a selection
+    const sig = await readSignal(r.signal_id);
+    expect(sig.context_path).toBeNull();
   });
 });

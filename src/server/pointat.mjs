@@ -1,7 +1,8 @@
-// Point-at bus writer. When Alec clicks a node/edge on the canvas and points at
-// it, the browser POSTs the resolved grammar handle (+ an optional PNG crop)
-// here, and this writes a "signal" to the web-context bus so a running Claude
-// Code session can collect what he pointed at (/session-attach).
+// Signal bus writer — the browser's outbound channel to a running Claude Code
+// session (/session-attach collects it). Carries three payloads through one door:
+// a pointed-at selection (grammar handle + optional PNG crop + optional note), a
+// bare message (a typed note, nothing selected), or a blank ping (a one-click "I'm
+// done"). Point-at is the richest payload, not the only one.
 //
 // The bus is a filesystem contract, not an API — one JSON file per signal in
 // ~/.claude/web-context/signals/, schema documented in
@@ -49,39 +50,51 @@ function oneTitle({ handle, label, style }) {
   return [handle, ...meta].filter(Boolean).join(' ');
 }
 
-// Emit one point-at signal covering one or more selected elements. Pass `handles`
-// (an array of {handle,label,style}) for multi-select, or the singular `handle`
-// shorthand; `png` is an optional data-URL crop (the union bbox for multi). Returns
+// Emit one signal from the browser to the running session. Three payload shapes,
+// all through this one door: a pointed-at selection (`handles`/`handle` + optional
+// `png` crop + optional `note`), a message alone (`note`, no selection), or a blank
+// ping (nothing — a one-click "I'm done" the session's listener wakes on). Returns
 // a small receipt for the UI status line.
-export async function emitPointAt({ handles, handle, label, style, source, png, note } = {}) {
+export async function emitSignal({ handles, handle, label, style, source, png, note } = {}) {
   let list = Array.isArray(handles) ? handles : (handle ? [{ handle, label, style }] : []);
   list = list.map((h) => ({ handle: oneLine(h.handle, 120), label: h.label, style: h.style })).filter((h) => h.handle);
-  if (!list.length) throw new Error('handle is required');
+  note = oneLine(note);
   const signalDir = join(WEB_CONTEXT, 'signals');
   await mkdir(signalDir, { recursive: true });
   const signalId = newSignalId();
 
-  // Optional crop: write it and point context_path at it, so /session-attach
-  // surfaces the visual on collect — this extends context_path (documented for
-  // framed text) to carry an image, which is the show-don't-tell payoff.
+  // Optional crop (selection payload only): write it and point context_path at it,
+  // so /session-attach surfaces the visual on collect — extends context_path
+  // (documented for framed text) to carry an image, the show-don't-tell payoff.
   let contextPath = null;
-  if (typeof png === 'string' && png.startsWith(PNG_PREFIX)) {
+  if (list.length && typeof png === 'string' && png.startsWith(PNG_PREFIX)) {
     const cropDir = join(WEB_CONTEXT, 'point-at');
     await mkdir(cropDir, { recursive: true });
     contextPath = join(cropDir, `${signalId}.png`);
     await writeAtomic(contextPath, Buffer.from(png.slice(PNG_PREFIX.length), 'base64'));
   }
 
-  const title = list.length === 1
-    ? oneTitle(list[0])
-    : `${list.map((h) => h.handle).join(', ')} (${list.length} elements)`;
+  // Kind + title reflect which payload it is, so a collecting session can tell a
+  // pointed-at selection from a bare message from a "done" ping at a glance.
+  let kind, title;
+  if (list.length) {
+    kind = 'dag-point-at';
+    const base = list.length === 1 ? oneTitle(list[0]) : `${list.map((h) => h.handle).join(', ')} (${list.length} elements)`;
+    title = note ? `${base} — ${note}` : base;
+  } else if (note) {
+    kind = 'dag-message';
+    title = note;
+  } else {
+    kind = 'dag-ping';
+    title = 'ping — signalled from dag-generator';
+  }
   const signal = {
     signal_id: signalId,
-    kind: 'dag-point-at',
+    kind,
     source: oneLine(source) || 'http://127.0.0.1:4180/',
     created_at: new Date().toISOString(),
     title: oneLine(title),
-    note: oneLine(note),   // Alec's optional instruction; untrusted — a session surfaces, not auto-runs it
+    note,   // Alec's own words; a session surfaces them, and confirms anything side-effectful
     session_id: null,
     cwd_hint: REPO_ROOT,
     contract_url: null,
@@ -91,5 +104,5 @@ export async function emitPointAt({ handles, handle, label, style, source, png, 
     consumed_by: null,
   };
   await writeAtomic(join(signalDir, `${signalId}.json`), JSON.stringify(signal, null, 2) + '\n');
-  return { signal_id: signalId, handle: list[0].handle, handles: list.map((h) => h.handle), title: signal.title, crop: contextPath };
+  return { signal_id: signalId, kind, handle: list[0]?.handle || null, handles: list.map((h) => h.handle), title: signal.title, crop: contextPath, note };
 }

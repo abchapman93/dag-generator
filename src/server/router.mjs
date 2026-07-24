@@ -6,7 +6,7 @@
 import express from 'express';
 import { detectTools, compile } from './compile.mjs';
 import { listConfigs, readConfig, writeConfig, deleteConfig } from './configs.mjs';
-import { emitPointAt } from './pointat.mjs';
+import { emitSignal } from './pointat.mjs';
 
 const MIME = { pdf: 'application/pdf', svg: 'image/svg+xml', png: 'image/png' };
 
@@ -50,12 +50,11 @@ export function createRouter() {
     }
   });
 
-  // POST { handle, label?, style?, source?, png? } -> writes a point-at signal to
-  // the web-context bus (~/.claude/web-context/signals/) for /session-attach.
-  r.post('/api/point-at', async (req, res) => {
-    const { handle, handles } = req.body || {};
-    if (!handle && !(Array.isArray(handles) && handles.length)) return res.status(400).json({ error: 'missing handle' });
-    try { res.json(await emitPointAt(req.body)); }
+  // POST { handles?/handle?, note?, png?, source? } -> writes a signal to the
+  // web-context bus (~/.claude/web-context/signals/) for /session-attach. Any subset
+  // is valid: a selection, a bare message, or nothing at all (a "done" ping).
+  r.post('/api/signal', async (req, res) => {
+    try { res.json(await emitSignal(req.body || {})); }
     catch (e) { res.status(500).json({ error: e.message }); }
   });
 

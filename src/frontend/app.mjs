@@ -369,23 +369,28 @@ export function mount({ stage }) {
   // Resolves the selection to its grammar handle, copies it to the clipboard
   // (works with no server), and signals the web-context bus with an optional
   // crop so a session can /session-attach and SEE what was pointed at.
+  // Send a signal to the running session. A selection makes it a point-at (handles +
+  // crop); a note with no selection is a bare message; nothing at all is a "done"
+  // ping. All three go through one door.
   async function pointAt(note) {
-    const p = await canvas.pointAt();
-    if (!p || !p.handles.length) { status('warn', null, 'select a node or edge first, then point at it'); return; }
-    const handles = p.handles.map((h) => h.handle);
-    const clip = note ? `${handles.join(' ')} — ${note}` : handles.join(' ');
+    const p = await canvas.pointAt();                 // null when nothing is selected
+    const handles = p ? p.handles.map((h) => h.handle) : [];
+    const clip = [handles.join(' '), note].filter(Boolean).join(' — ');
     let copied = false, signalled = false;
-    try { await navigator.clipboard.writeText(clip); copied = true; } catch { /* clipboard blocked */ }
+    if (clip) { try { await navigator.clipboard.writeText(clip); copied = true; } catch { /* clipboard blocked */ } }
     try {
-      const res = await fetch('/dag/api/point-at', {
+      const res = await fetch('/dag/api/signal', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ handles: p.handles, note: note || undefined, source: location.href, png: p.png }),
+        body: JSON.stringify({ handles: p ? p.handles : [], note: note || undefined, source: location.href, png: p ? p.png : null }),
       });
       signalled = res.ok;
-    } catch { /* no server (static/embedded) — the handles are still on the clipboard */ }
-    const label = handles.length === 1 ? handles[0] : `${handles[0]} +${handles.length - 1} more`;
-    const done = [copied && 'copied', signalled && 'signalled'].filter(Boolean).join(' & ');
-    status('ok', null, `⌖ ${label}${note ? ' + note' : ''}${done ? ` — ${done}` : ' — copy blocked; no session bus'}`);
+    } catch { /* no server (static/embedded) — anything copyable is still on the clipboard */ }
+    let icon, what;
+    if (handles.length) { icon = '⌖'; what = (handles.length === 1 ? handles[0] : `${handles[0]} +${handles.length - 1} more`) + (note ? ' + note' : ''); }
+    else if (note) { icon = '✉'; what = `“${note}”`; }
+    else { icon = '◉'; what = 'ping'; }
+    const done = [copied && 'copied', signalled && 'signalled'].filter(Boolean).join(' & ') || 'no session bus';
+    status('ok', null, `${icon} ${what} — ${done}`);
   }
 
   // The chevron dropdown: point at the current selection with a typed note, then
@@ -407,7 +412,7 @@ export function mount({ stage }) {
   function renderInspector(sel) {
     const box = $('.dg-inspector');
     const items = Array.isArray(sel) ? sel : (sel ? [sel] : []);
-    if (items.length === 0) { box.innerHTML = '<p class="dg-muted">Select a node or edge to edit it. Shift-click or shift-drag to select several, then ⌖ point at all.</p>'; return; }
+    if (items.length === 0) { box.innerHTML = '<p class="dg-muted">Select a node or edge to edit it. Shift-click / shift-drag to select several, then ⌖ point at all. No selection needed to ✉ send Claude a message (▾) or a one-click ⌖ ping.</p>'; return; }
     if (items.length > 1) {
       box.innerHTML = `<h4>${items.length} selected</h4>
         <p class="dg-muted">${items.map(handleOf).map(esc).join('<br>')}</p>
@@ -523,12 +528,12 @@ const TEMPLATE = `
     <button class="dg-btn" data-act="addEdge">+ edge</button>
     <button class="dg-btn" data-act="del">delete</button>
     <span class="dg-pointat">
-      <button class="dg-btn dg-pointat-main" data-act="pointAt" title="Point at the selected node/edge (p): copy its @handle and signal a running session">⌖ point at</button>
+      <button class="dg-btn dg-pointat-main" data-act="pointAt" title="Signal the running session (p): point at the selection, or — with nothing selected — send a one-click ping">⌖ point at</button>
       <details class="dg-export dg-pointat-more">
-        <summary class="dg-btn dg-pointat-chevron" title="point at with a note">▾</summary>
+        <summary class="dg-btn dg-pointat-chevron" title="send with a note / message">▾</summary>
         <div class="dg-menu dg-pointat-menu">
-          <input id="pointat-note" placeholder="add a note, e.g. make this green…" spellcheck="false">
-          <button data-act="pointAtNote">⌖ point at with note</button>
+          <input id="pointat-note" placeholder="a note on the selection, or a message to Claude…" spellcheck="false">
+          <button data-act="pointAtNote">✉ send</button>
         </div>
       </details>
     </span>
