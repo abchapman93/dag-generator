@@ -11,7 +11,7 @@ describe('signal bus', () => {
   // Fields /session-attach + signals.py expect to be present on every signal.
   const SCHEMA = ['signal_id', 'kind', 'source', 'created_at', 'title', 'note',
     'session_id', 'cwd_hint', 'contract_url', 'state_url', 'context_path',
-    'consumed_at', 'consumed_by'];
+    'in_reply_to', 'consumed_at', 'consumed_by'];
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'dg-webctx-'));
@@ -88,5 +88,22 @@ describe('signal bus', () => {
     const r = await emitSignal({ note: 'hi', png });   // png ignored without a selection
     const sig = await readSignal(r.signal_id);
     expect(sig.context_path).toBeNull();
+  });
+
+  it('marks an answer to an outbound ask with in_reply_to', async () => {
+    const r = await emitSignal({ note: 'Compact', in_reply_to: '20260724T173000Z-a1b2' });
+    expect(r.in_reply_to).toBe('20260724T173000Z-a1b2');
+    const sig = await readSignal(r.signal_id);
+    for (const k of SCHEMA) expect(sig).toHaveProperty(k);
+    expect(sig.kind).toBe('dag-answer');       // distinct from a bare dag-message
+    expect(sig.in_reply_to).toBe('20260724T173000Z-a1b2');
+    expect(sig.title).toContain('Compact');
+    expect(sig.note).toBe('Compact');
+  });
+
+  it('leaves in_reply_to null on an ordinary signal', async () => {
+    const sig = await readSignal((await emitSignal({ note: 'unrelated' })).signal_id);
+    expect(sig.in_reply_to).toBeNull();        // additive — existing readers ignore it
+    expect(sig.kind).toBe('dag-message');
   });
 });

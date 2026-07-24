@@ -7,6 +7,7 @@ import express from 'express';
 import { detectTools, compile } from './compile.mjs';
 import { listConfigs, readConfig, writeConfig, deleteConfig } from './configs.mjs';
 import { emitSignal } from './pointat.mjs';
+import { listAsks, answerAsk } from './asks.mjs';
 
 const MIME = { pdf: 'application/pdf', svg: 'image/svg+xml', png: 'image/png' };
 
@@ -50,11 +51,32 @@ export function createRouter() {
     }
   });
 
-  // POST { handles?/handle?, note?, png?, source? } -> writes a signal to the
-  // web-context bus (~/.claude/web-context/signals/) for /session-attach. Any subset
-  // is valid: a selection, a bare message, or nothing at all (a "done" ping).
+  // POST { handles?/handle?, note?, png?, source?, in_reply_to? } -> writes a signal
+  // to the web-context bus (~/.claude/web-context/signals/) for /session-attach. Any
+  // subset is valid: a selection, a bare message, or nothing at all (a "done" ping).
+  //
+  // `in_reply_to` makes it an ANSWER to an outbound ask: the same door, one extra
+  // field. The signal carries it so the session can match; we also stamp the ask
+  // answered here so the card stops rendering in every open tab. Stamping is
+  // best-effort — a lost answer the session never hears is worse than a card that
+  // lingers, so a failed stamp must not fail the signal.
   r.post('/api/signal', async (req, res) => {
-    try { res.json(await emitSignal(req.body || {})); }
+    const body = req.body || {};
+    try {
+      const receipt = await emitSignal(body);
+      if (body.in_reply_to) {
+        const ask = await answerAsk(body.in_reply_to, { answer: body.note, optionId: body.option_id })
+          .catch(() => null);
+        receipt.answered = ask ? ask.ask_id : null;
+      }
+      res.json(receipt);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/asks?target=dag-generator -> unanswered asks this surface should render.
+  // The page polls this; option previews come back inlined as data URIs.
+  r.get('/api/asks', async (req, res) => {
+    try { res.json(await listAsks({ target: req.query.target || null })); }
     catch (e) { res.status(500).json({ error: e.message }); }
   });
 

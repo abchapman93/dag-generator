@@ -55,7 +55,7 @@ function oneTitle({ handle, label, style }) {
 // `png` crop + optional `note`), a message alone (`note`, no selection), or a blank
 // ping (nothing — a one-click "I'm done" the session's listener wakes on). Returns
 // a small receipt for the UI status line.
-export async function emitSignal({ handles, handle, label, style, source, png, note } = {}) {
+export async function emitSignal({ handles, handle, label, style, source, png, note, in_reply_to } = {}) {
   let list = Array.isArray(handles) ? handles : (handle ? [{ handle, label, style }] : []);
   list = list.map((h) => ({ handle: oneLine(h.handle, 120), label: h.label, style: h.style })).filter((h) => h.handle);
   note = oneLine(note);
@@ -76,8 +76,15 @@ export async function emitSignal({ handles, handle, label, style, source, png, n
 
   // Kind + title reflect which payload it is, so a collecting session can tell a
   // pointed-at selection from a bare message from a "done" ping at a glance.
+  const replyTo = oneLine(in_reply_to, 60);
   let kind, title;
-  if (list.length) {
+  if (replyTo) {
+    // An answer to an outbound ask. It's the same door and the same shape — the
+    // session matches on in_reply_to — but a distinct kind means a listener
+    // scanning `signals.py latest` sees what it is without parsing.
+    kind = 'dag-answer';
+    title = note ? `answer: ${note}` : 'answer (empty)';
+  } else if (list.length) {
     kind = 'dag-point-at';
     const base = list.length === 1 ? oneTitle(list[0]) : `${list.map((h) => h.handle).join(', ')} (${list.length} elements)`;
     title = note ? `${base} — ${note}` : base;
@@ -100,9 +107,10 @@ export async function emitSignal({ handles, handle, label, style, source, png, n
     contract_url: null,
     state_url: null,
     context_path: contextPath,
+    in_reply_to: replyTo,   // additive, null by default — existing readers ignore it
     consumed_at: null,
     consumed_by: null,
   };
   await writeAtomic(join(signalDir, `${signalId}.json`), JSON.stringify(signal, null, 2) + '\n');
-  return { signal_id: signalId, kind, handle: list[0]?.handle || null, handles: list.map((h) => h.handle), title: signal.title, crop: contextPath, note };
+  return { signal_id: signalId, kind, handle: list[0]?.handle || null, handles: list.map((h) => h.handle), title: signal.title, crop: contextPath, note, in_reply_to: replyTo };
 }

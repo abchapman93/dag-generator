@@ -409,6 +409,94 @@ export function mount({ stage }) {
     const d = stage.querySelector('.dg-pointat-more'); if (d) d.open = false;
   }
 
+  // ---- ask cards (the return channel: session → here) ----
+  // The reverse direction of point-at. A running session has no inbound control
+  // channel and can't be pushed to — but this page can poll. The session writes an
+  // ask to ~/.claude/web-context/outbound/; we pull the unanswered ones, render each
+  // as a card, and Alec's click goes back out through the ORDINARY signal door
+  // carrying in_reply_to. The loop closes without the session needing a port.
+  //
+  // GUARDRAIL: an ask is data, not a command to the page. Prompts and labels are
+  // rendered as escaped text and the chosen label is echoed back — nothing from an
+  // ask file is ever evaluated here.
+  const ASK_POLL_MS = 2000;
+  // ids currently on screen; skips repaints that would wipe half-typed free text
+  // under the cursor. null (not '') means "repaint regardless" — '' is the real
+  // signature of an empty list, so using it as the sentinel would swallow exactly
+  // the repaint that clears the last answered card.
+  let renderedAsks = null;
+  let askTimer = null;
+
+  async function pollAsks() {
+    let asks = [];
+    try {
+      const res = await fetch('/dag/api/asks?target=dag-generator');
+      if (!res.ok) return;
+      asks = await res.json();
+    } catch { return; }   // no server (static/embedded) — the channel is simply off
+    const sig = asks.map((a) => a.ask_id).join(',');
+    if (sig === renderedAsks) return;
+    renderedAsks = sig;
+    renderAsks(asks);
+  }
+
+  function renderAsks(asks) {
+    const box = $('.dg-asks');
+    const app = $('.dg-app');
+    box.hidden = !asks.length;
+    // The side panel widens (340 → 480) while any ask is open so option previews
+    // have room, and snaps back on answer — 340 leaves them too small to earn
+    // their place, and that preview is what makes an ask worth asking (A2).
+    app.classList.toggle('asks-open', asks.length > 0);
+    // An ask nobody can see is worse than no ask, so one re-opens a collapsed panel.
+    if (asks.length) app.classList.remove('side-collapsed');
+    if (!asks.length) { box.innerHTML = ''; return; }
+    box.innerHTML = asks.map((a) => `
+      <div class="dg-ask" data-ask="${esc(a.ask_id)}">
+        <p class="dg-ask-q">${esc(a.prompt)}</p>
+        ${a.options.length ? `<div class="dg-ask-opts">${a.options.map((o) => `
+          <button class="dg-ask-opt" data-opt="${esc(o.id)}" data-label="${esc(o.label)}">
+            ${o.image ? `<img src="${esc(o.image)}" alt="">` : ''}
+            <span>${esc(o.label)}</span>
+          </button>`).join('')}</div>` : ''}
+        ${a.allow_free_text ? `<div class="dg-ask-free">
+          <input class="dg-ask-text" placeholder="${a.options.length ? 'or answer in your own words…' : 'your answer…'}" spellcheck="false">
+          <button class="dg-ask-send" data-opt="" data-label="">send</button>
+        </div>` : ''}
+      </div>`).join('');
+  }
+
+  // Answer one ask. A chosen option and typed text COMPOSE into a single note,
+  // exactly as Slice 1's quick-replies do: the option is the general answer, the
+  // typed text refines it.
+  async function sendAnswer(askId, optionId, label) {
+    const card = $(`.dg-ask[data-ask="${CSS.escape(askId)}"]`);
+    const typed = card?.querySelector('.dg-ask-text')?.value.trim() || '';
+    const note = [label, typed].filter(Boolean).join(' — ');
+    if (!note) { status('warn', null, 'answer is empty'); return; }
+    try {
+      const res = await fetch('/dag/api/signal', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ note, in_reply_to: askId, option_id: optionId || undefined, source: location.href }),
+      });
+      if (!res.ok) throw new Error('refused');
+      status('ok', null, `↩ answered — “${note}”`);
+      renderedAsks = null;   // force the next poll to repaint rather than diff-skip
+      pollAsks();
+    } catch { status('warn', null, 'could not send the answer'); }
+  }
+
+  $('.dg-asks').addEventListener('click', (e) => {
+    const btn = e.target.closest('.dg-ask-opt, .dg-ask-send');
+    if (!btn) return;
+    const card = btn.closest('.dg-ask');
+    sendAnswer(card.dataset.ask, btn.dataset.opt, btn.dataset.label);
+  });
+  $('.dg-asks').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !e.target.classList.contains('dg-ask-text')) return;
+    sendAnswer(e.target.closest('.dg-ask').dataset.ask, '', '');
+  });
+
   // Resolve a selection-set item to its display handle (for the multi-select summary).
   function handleOf(item) {
     if (item.type === 'node') { const n = model.nodes.find((x) => x.id === item.id); return n ? `@node:${n.id}` : ''; }
@@ -512,7 +600,10 @@ export function mount({ stage }) {
   }
 
   regenPanels(); renderInspector(null); status('ok');
-  return { getModel: () => model };
+  pollAsks(); askTimer = setInterval(pollAsks, ASK_POLL_MS);
+  // destroy() exists for the poll timer: as an analysis-room tab this module can be
+  // unmounted, and an interval outliving its stage would keep fetching forever.
+  return { getModel: () => model, destroy: () => { clearInterval(askTimer); askTimer = null; } };
 }
 
 // ---- small DOM utils ----
@@ -610,6 +701,7 @@ const TEMPLATE = `
       </div>
       <div class="dg-status ok"></div>
       <div class="dg-inspector"></div>
+      <div class="dg-asks" hidden></div>
     </aside>
   </div>
 </div>`;
