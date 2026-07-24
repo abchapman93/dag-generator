@@ -65,26 +65,81 @@ function extents(nodes) {
   return { minx: Math.min(...xs), maxx: Math.max(...xs), miny: Math.min(...ys), maxy: Math.max(...ys) };
 }
 
+// Flowchart family — decision/leaf boxes, rendered the same in both modes since
+// their colour is the point (mirrors the TikZ decision/leaf/leafPos/leafNeg set).
+const FLOW = {
+  decision: { shape: 'rect', fill: '#ffffff', stroke: '#1a1c22', text: '#1a1c22', rx: 34, ry: 22 },
+  leaf: { shape: 'rrect', fill: '#f3f4f6', stroke: '#6b7280', text: '#1a1c22', rx: 34, ry: 22 },
+  leafPos: { shape: 'rrect', fill: '#dcf5e3', stroke: '#3a9d5d', text: '#14532d', rx: 34, ry: 22 },
+  leafNeg: { shape: 'rrect', fill: '#fbdcdc', stroke: '#c0392b', text: '#7f1d1d', rx: 34, ry: 22 },
+};
+
 function visual(node, mode) {
-  if (mode === 'manuscript') {
+  let v;
+  if (FLOW[node.style]) {
+    v = { ...FLOW[node.style] };
+  } else if (mode === 'manuscript') {
     switch (node.style) {
-      case 'cond': return { shape: 'rect', fill: '#ffffff', stroke: '#1a1c22', text: '#1a1c22', rx: 18, ry: 16 };
-      case 'unobs': return { shape: 'none', text: '#8a8f98', rx: 13, ry: 13 };
-      case 'regime': return { shape: 'diamond', fill: '#ffffff', stroke: '#e07a1f', text: '#e07a1f', rx: 22, ry: 18 };
-      case 'fixed': return { shape: 'none', text: '#e07a1f', rx: 13, ry: 13 };
-      default: return { shape: 'none', text: '#1a1c22', rx: 13, ry: 13 };
+      case 'cond': v = { shape: 'rect', fill: '#ffffff', stroke: '#1a1c22', text: '#1a1c22', rx: 18, ry: 16 }; break;
+      case 'unobs': v = { shape: 'none', text: '#8a8f98', rx: 13, ry: 13 }; break;
+      case 'regime': v = { shape: 'diamond', fill: '#ffffff', stroke: '#e07a1f', text: '#e07a1f', rx: 22, ry: 18 }; break;
+      case 'fixed': v = { shape: 'none', text: '#e07a1f', rx: 13, ry: 13 }; break;
+      default: v = { shape: 'none', text: '#1a1c22', rx: 13, ry: 13 };
+    }
+  } else if (node.style === 'regime') {
+    v = { shape: 'diamond', fill: '#ffffff', stroke: '#e07a1f', text: '#e07a1f', rx: 24, ry: 19 };
+  } else if (node.style === 'fixed') {
+    v = { shape: 'none', text: '#e07a1f', rx: 13, ry: 13 };
+  } else {
+    // informal: colour by role, falling back to style.
+    const key = node.role || (node.style === 'unobs' ? 'latent' : node.style === 'cond' ? 'cond' : 'rv');
+    if (key === 'cond' || node.style === 'cond') {
+      v = { shape: 'rect', fill: '#ffffff', stroke: '#1a1c22', text: '#1a1c22', rx: 30, ry: 22, doubled: true };
+    } else {
+      const c = INFORMAL[key];
+      v = c ? { shape: 'rrect', fill: c.fill, stroke: c.stroke, text: '#1a1c22', rx: 30, ry: 22, dashed: c.dashed }
+            : { shape: 'rrect', fill: '#ffffff', stroke: '#c9ced6', text: '#1a1c22', rx: 30, ry: 22 };
     }
   }
-  // informal: colour by role, falling back to style.
-  if (node.style === 'regime') return { shape: 'diamond', fill: '#ffffff', stroke: '#e07a1f', text: '#e07a1f', rx: 24, ry: 19 };
-  if (node.style === 'fixed') return { shape: 'none', text: '#e07a1f', rx: 13, ry: 13 };
-  const key = node.role || (node.style === 'unobs' ? 'latent' : node.style === 'cond' ? 'cond' : 'rv');
-  if (key === 'cond' || node.style === 'cond') {
-    return { shape: 'rect', fill: '#ffffff', stroke: '#1a1c22', text: '#1a1c22', rx: 30, ry: 22, doubled: true };
+
+  // Per-node colour overrides (xcolor expressions -> hex, best effort). Setting a
+  // fill/stroke on an otherwise-shapeless node promotes it to a rounded box so the
+  // colour is visible.
+  if (node.fill || node.stroke) {
+    if (v.shape === 'none') { v.shape = 'rrect'; v.rx = v.rx || 30; v.ry = v.ry || 22; v.fill = v.fill || '#ffffff'; }
+    const f = xcolorToHex(node.fill); if (f) v.fill = f;
+    const s = xcolorToHex(node.stroke); if (s) v.stroke = s;
   }
-  const c = INFORMAL[key];
-  if (c) return { shape: 'rrect', fill: c.fill, stroke: c.stroke, text: '#1a1c22', rx: 30, ry: 22, dashed: c.dashed };
-  return { shape: 'rrect', fill: '#ffffff', stroke: '#c9ced6', text: '#1a1c22', rx: 30, ry: 22 };
+  const t = xcolorToHex(node.text); if (t) v.text = t;
+  return v;
+}
+
+// Minimal xcolor-expression -> hex. Handles a base palette, `name!pct` (mix with
+// white) and `name!pct!other`. Returns null on anything it can't map, so callers
+// keep their default colour rather than rendering wrong.
+const XCOLOR = {
+  red: '#ff0000', green: '#00ff00', blue: '#0000ff', cyan: '#00ffff', magenta: '#ff00ff',
+  yellow: '#ffff00', orange: '#ff7f00', violet: '#800080', purple: '#bf0040', brown: '#bf8040',
+  black: '#000000', white: '#ffffff', gray: '#808080', grey: '#808080', lime: '#bfff00',
+  pink: '#ffbfbf', teal: '#008080', olive: '#808000',
+};
+export function xcolorToHex(expr) {
+  if (expr == null) return null;
+  const s = String(expr).trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(s)) return s.toLowerCase();
+  const m = /^([a-zA-Z]+)(?:!(\d+(?:\.\d+)?))?(?:!([a-zA-Z]+))?$/.exec(s);
+  if (!m) return null;
+  const base = XCOLOR[m[1].toLowerCase()];
+  if (!base) return null;
+  if (m[2] == null) return base;
+  const other = m[3] ? (XCOLOR[m[3].toLowerCase()] || '#ffffff') : '#ffffff';
+  return mixHex(base, other, parseFloat(m[2]) / 100);
+}
+function mixHex(c1, c2, t) {
+  const ch = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [r1, g1, b1] = ch(c1), [r2, g2, b2] = ch(c2);
+  const q = (a, b) => Math.round(a * t + b * (1 - t)).toString(16).padStart(2, '0');
+  return `#${q(r1, r2)}${q(g1, g2)}${q(b1, b2)}`;
 }
 
 function renderNode(node, p, mode, swigStyle) {
@@ -117,17 +172,33 @@ function renderEdge(e, pos, nodes, mode) {
   const [ax, ay] = trim(a, ux, uy, vA);
   const [bx, by] = trim(b, -ux, -uy, vB);
 
-  let d;
+  let d, mid;
   if (e.bend) {
     const mx = (ax + bx) / 2, my = (ay + by) / 2;
     const k = Math.tan((e.bend * Math.PI / 180) / 2);
     const cx = mx - uy * len * k * 0.5, cy = my + ux * len * k * 0.5;
     d = `M${round(ax)},${round(ay)} Q${round(cx)},${round(cy)} ${round(bx)},${round(by)}`;
+    mid = { x: 0.25 * ax + 0.5 * cx + 0.25 * bx, y: 0.25 * ay + 0.5 * cy + 0.25 * by }; // quad point at t=0.5
   } else {
     d = `M${round(ax)},${round(ay)} L${round(bx)},${round(by)}`;
+    mid = { x: (ax + bx) / 2, y: (ay + by) / 2 };
   }
   const start = bidir ? ` marker-start="url(#mk-${e.style})"` : '';
-  return `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.6"${dash} marker-end="url(#mk-${e.style})"${start}/>`;
+  const path = `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.6"${dash} marker-end="url(#mk-${e.style})"${start}/>`;
+  return path + renderEdgeLabel(e, mid);
+}
+
+// Branch-condition label near the edge midpoint, with a white halo (paint-order)
+// so it stays legible where it crosses the line. labelPos keywords (above/below/
+// left/right, TikZ's own) nudge it off the path.
+function renderEdgeLabel(e, mid) {
+  if (!e.label) return '';
+  const pos = e.labelPos || 'above';
+  let dx = 0, dy = -8, anchor = 'middle';
+  if (/below/.test(pos)) dy = 15;
+  if (/left/.test(pos)) { anchor = 'end'; dx = -7; if (!/above|below/.test(pos)) dy = 4; }
+  else if (/right/.test(pos)) { anchor = 'start'; dx = 7; if (!/above|below/.test(pos)) dy = 4; }
+  return `<text x="${round(mid.x + dx)}" y="${round(mid.y + dy)}" text-anchor="${anchor}" dominant-baseline="central" font-style="italic" font-size="14" fill="#3a3f47" paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round">${tex2disp(e.label)}</text>`;
 }
 
 function trim(p, ux, uy, v) {

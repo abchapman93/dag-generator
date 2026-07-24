@@ -20,12 +20,25 @@ const LEGEND = {
   ],
 };
 
+// Appended when the model uses the flowchart family (decision-tree figures).
+const FLOW_LEGEND = [
+  ['#ffffff', '#1a1c22', 'Decision / test'],
+  ['#f3f4f6', '#6b7280', 'Terminal / leaf'],
+  ['#dcf5e3', '#3a9d5d', 'Recommend (positive leaf)'],
+  ['#fbdcdc', '#c0392b', 'Avoid (negative leaf)'],
+];
+const FLOW_STYLES = new Set(['decision', 'leaf', 'leafPos', 'leafNeg']);
+
 export function toHTML(model, opts = {}) {
   const mode = opts.style || model.meta?.style || 'informal';
   const swigStyle = opts.swigStyle || model.meta?.swigStyle || 'superscript';
   const title = model.meta?.title || 'Causal diagram';
   const svg = toSVG(model, { style: mode, swigStyle, background: 'transparent' });
-  const legend = (LEGEND[mode] || [])
+  const entries = [...(LEGEND[mode] || [])];
+  if (model.nodes?.some((n) => FLOW_STYLES.has(n.style))) {
+    for (const row of FLOW_LEGEND) if (!entries.some((e) => e[2] === row[2])) entries.push(row);
+  }
+  const legend = entries
     .map(([fill, stroke, label]) => `<li><span class="sw" style="background:${fill};border-color:${stroke}"></span>${esc(label)}</li>`)
     .join('');
 

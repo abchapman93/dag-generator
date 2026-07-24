@@ -3,7 +3,7 @@ import * as formula from '../src/engine/formula.mjs';
 import * as dagitty from '../src/engine/dagitty.mjs';
 import * as tikz from '../src/engine/tikz.mjs';
 import { layout } from '../src/engine/layout.mjs';
-import { toSVG } from '../src/engine/svg.mjs';
+import { toSVG, xcolorToHex } from '../src/engine/svg.mjs';
 import { toHTML } from '../src/engine/html.mjs';
 import { intervene, formatSwigLabel } from '../src/engine/swig.mjs';
 import { validate, emptyModel } from '../src/engine/model.mjs';
@@ -176,6 +176,95 @@ describe('tikz canonical grammar', () => {
     expect(tex).toMatch(/\\splitbar\{A\}\{A_v\};/);
     const { model: back } = tikz.parse(tex);
     expect(back.swig.interventions[0]).toEqual({ node: 'A', regimeLabel: 'A_v' });
+  });
+});
+
+describe('decision-tree grammar (edge labels + flowchart node styling)', () => {
+  // The pneumonia ATS-2025 rule that produced 0 nodes / 0 edges before this
+  // feature: a decision tree with branch-condition edge labels and green/red
+  // colored terminal boxes. Round-trips fully now, with no flags.
+  const tree = () => emptyModel({
+    nodes: [
+      { id: 'S', x: 0, y: 0, label: 'Severity', style: 'decision' },
+      { id: 'abx', x: 1, y: 1, label: 'Antibiotics', style: 'leafPos' },
+      { id: 'noabx', x: 1, y: -1, label: 'No antibiotics', style: 'leafNeg' },
+      { id: 'more', x: 1, y: 0, label: 'More testing', style: 'leaf', fill: 'blue!12', stroke: 'blue!55!black' },
+    ],
+    edges: [
+      { from: 'S', to: 'abx', style: 'causal', label: 'Severe', labelPos: 'above' },
+      { from: 'S', to: 'noabx', style: 'causal', label: 'Not severe', labelPos: 'below' },
+      { from: 'S', to: 'more', style: 'causal', label: 'Indeterminate' },
+    ],
+  });
+
+  it('round-trips a labelled-edge + colored-leaf tree through tikz with no flags', () => {
+    const { model: back, flags } = tikz.parse(tikz.emit(tree()));
+    expect(flags).toHaveLength(0);
+    expect(back.nodes.length).toBe(4);
+    expect(back.edges.length).toBe(3);
+    const byStyle = Object.fromEntries(back.nodes.map((n) => [n.id, n.style]));
+    expect(byStyle).toEqual({ S: 'decision', abx: 'leafPos', noabx: 'leafNeg', more: 'leaf' });
+    const e = back.edges.find((x) => x.to === 'abx');
+    expect(e.label).toBe('Severe');
+    expect(e.labelPos).toBe('above');
+    const more = back.nodes.find((n) => n.id === 'more');
+    expect(more.fill).toBe('blue!12');
+    expect(more.stroke).toBe('blue!55!black');
+  });
+
+  it('emits the labelled edge and colored node in the canonical grammar', () => {
+    const tex = tikz.emit(tree());
+    expect(tex).toMatch(/\\draw\[causal\] \(S\) to node\[above\]\{Severe\} \(abx\);/);
+    expect(tex).toMatch(/\\node\[leaf, fill=blue!12, draw=blue!55!black\]\(more\)/);
+    expect(tex).toMatch(/\\node\[leafPos\]\(abx\)/);
+  });
+
+  it('preserves an edge label that contains a nested-brace math subscript', () => {
+    const m = emptyModel({
+      nodes: [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 2, y: 0 }],
+      edges: [{ from: 'A', to: 'B', style: 'causal', label: '$S_{ep}$', labelPos: 'above' }],
+    });
+    const back = tikz.parse(tikz.emit(m)).model;
+    expect(back.edges[0].label).toBe('$S_{ep}$');
+  });
+
+  it('round-trips through the formula DSL (keywords + labelled arrow)', () => {
+    const src = 'decision: S\nrecommend: abx\navoid: noabx\nS -> abx : "Severe"\nS -> noabx : "Not severe"';
+    const { model, flags } = formula.parse(src);
+    expect(flags).toHaveLength(0);
+    const nm = nodeMap(model);
+    expect(nm.get('S').style).toBe('decision');
+    expect(nm.get('abx').style).toBe('leafPos');
+    expect(nm.get('noabx').style).toBe('leafNeg');
+    const e = model.edges.find((x) => x.to === 'abx');
+    expect(e.label).toBe('Severe');
+    // emit -> parse is stable on styles and labels
+    const back = formula.parse(formula.emit(model)).model;
+    expect(nodeMap(back)).toEqual(nm);
+    expect(back.edges.find((x) => x.to === 'abx').label).toBe('Severe');
+  });
+
+  it('bare TikZ style options that are neither fill/draw/text are flagged but kept', () => {
+    const src = '\\node[leaf, wobble=3](L) at (0,0) {$L$};';
+    const { model, flags } = tikz.parse(src);
+    expect(model.nodes[0].id).toBe('L');
+    expect(flags.map((f) => f.why).join(' ')).toMatch(/unsupported node option 'wobble=3'/);
+  });
+
+  it('renders the edge label text and the leaf fill in SVG', () => {
+    const svg = toSVG(layout(tree()), { style: 'informal' });
+    expect(svg).toContain('>Severe</text>');
+    expect(svg).toMatch(/fill="#dcf5e3"/); // leafPos green box
+    expect(svg).toMatch(/fill="#fbdcdc"/); // leafNeg red box
+  });
+
+  it('maps xcolor overrides to hex for SVG and warns on comma-bearing colours', () => {
+    expect(xcolorToHex('green!55!black')).toBe('#008c00');
+    expect(xcolorToHex('red!60!black')).toBe('#990000');
+    expect(xcolorToHex('#AABBCC')).toBe('#aabbcc');
+    expect(xcolorToHex('notacolor')).toBe(null);
+    const { warnings } = validate(emptyModel({ nodes: [{ id: 'X', x: 0, y: 0, fill: 'rgb,255:red,1' }] }));
+    expect(warnings.join(' ')).toMatch(/comma-free xcolor/);
   });
 });
 

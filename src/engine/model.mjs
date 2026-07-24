@@ -4,18 +4,26 @@
 // Model shape:
 //   {
 //     meta:  { kind, style, title, nodeSep, swigStyle },
-//     nodes: [ { id, label, x, y, style, role } ],
-//     edges: [ { from, to, style, bend } ],
+//     nodes: [ { id, label, x, y, style, role, fill?, stroke?, text? } ],
+//     edges: [ { from, to, style, bend, label?, labelPos? } ],
 //     swig?: { interventions: [ { node, regimeLabel } ] }
 //   }
 //
-// Design note: the primitive `node.style` (rv|cond|unobs|regime|fixed) is the
-// AUTHORITATIVE field for rendering and for the canonical-TikZ round-trip — it is
-// always preserved. `node.role` is optional semantic metadata (exposure, outcome,
-// …) that drives informal-style colouring and the formula DSL; it may be absent
-// after a TikZ import because primitive→semantic is not lossless.
+// Design note: the primitive `node.style` (rv|cond|unobs|regime|fixed plus the
+// flowchart family decision|leaf|leafPos|leafNeg) is the AUTHORITATIVE field for
+// rendering and for the canonical-TikZ round-trip — it is always preserved.
+// `node.role` is optional semantic metadata (exposure, outcome, …) that drives
+// informal-style colouring and the formula DSL; it may be absent after a TikZ
+// import because primitive→semantic is not lossless.
+//
+// Optional per-node colour overrides (`fill`/`stroke`/`text`) hold xcolor
+// expressions (e.g. `green!55!black`) — emitted straight into the TikZ node
+// option list and mapped best-effort to hex for SVG. They must be comma-free so
+// the comma-delimited option list round-trips. `edge.label` is an optional edge
+// annotation (branch condition on a decision tree); `edge.labelPos` is its TikZ
+// node placement (e.g. `above`), preserved verbatim.
 
-export const NODE_STYLES = ['rv', 'cond', 'unobs', 'regime', 'fixed'];
+export const NODE_STYLES = ['rv', 'cond', 'unobs', 'regime', 'fixed', 'decision', 'leaf', 'leafPos', 'leafNeg'];
 export const EDGE_STYLES = ['causal', 'reads', 'cfedge', 'det', 'biasing', 'blocked', 'bidirected'];
 export const ROLES = ['exposure', 'outcome', 'confounder', 'mediator', 'collider', 'instrument', 'covariate', 'latent'];
 export const KINDS = ['dag', 'swig'];
@@ -56,16 +64,22 @@ export function normalizeNode(n) {
     style: NODE_STYLES.includes(n.style) ? n.style : 'rv',
   };
   if (n.role && ROLES.includes(n.role)) node.role = n.role;
+  for (const k of ['fill', 'stroke', 'text']) {
+    if (n[k] != null && String(n[k]).trim()) node[k] = String(n[k]).trim();
+  }
   return node;
 }
 
 export function normalizeEdge(e) {
-  return {
+  const edge = {
     from: String(e.from),
     to: String(e.to),
     style: EDGE_STYLES.includes(e.style) ? e.style : 'causal',
     bend: Number.isFinite(e.bend) ? e.bend : 0,
   };
+  if (e.label != null && String(e.label).length) edge.label = String(e.label);
+  if (e.labelPos != null && String(e.labelPos).trim()) edge.labelPos = String(e.labelPos).trim();
+  return edge;
 }
 
 // A bare id becomes an italic-math label: A -> $A$, U1 -> $U_1$.
@@ -129,6 +143,11 @@ export function validate(model) {
     seen.add(n.id);
     if (n.style && !NODE_STYLES.includes(n.style)) errors.push(`node '${n.id}': unknown style '${n.style}'`);
     if (n.role && !ROLES.includes(n.role)) errors.push(`node '${n.id}': unknown role '${n.role}'`);
+    for (const k of ['fill', 'stroke', 'text']) {
+      if (n[k] && String(n[k]).includes(',')) {
+        warnings.push(`node '${n.id}': ${k} colour '${n[k]}' contains a comma; the TikZ round-trip needs comma-free xcolor expressions (e.g. green!55!black)`);
+      }
+    }
   }
 
   for (const e of model.edges) {

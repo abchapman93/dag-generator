@@ -2,10 +2,13 @@
 //
 //   Structural:   Y ~ A + L,  A ~ L         (RHS `+`-separated parents; `1`/`0` = none)
 //   Arrow chains: A -> M -> Y                (equivalent sugar)
+//   Labelled edge: S -> abx : "Severe"       (single arrow with a branch label)
 //   Bidirected:   U1 <-> U2                  (latent common cause; style `bidirected`)
 //   Roles:        exposure: A                outcome: Y
 //                 confounder: L1, L2         mediator: M    instrument: Z
 //                 unmeasured: U   (alias latent:)   adjusted: X  (conditioning box)
+//   Flowchart:    decision: S, C             (branch/test box)
+//                 leaf: L    recommend: abx    avoid: noabx   (terminal boxes)
 //
 // Statements are separated by newlines or `;`. On a structural line, top-level
 // commas separate independent formulas (`A ~ L, Y ~ A + L`). Role-annotation
@@ -28,7 +31,14 @@ const ROLE_KEYWORDS = {
   latent: { role: 'latent', style: 'unobs' },
   unmeasured: { role: 'latent', style: 'unobs' },
   adjusted: { style: 'cond' },
+  decision: { style: 'decision' },
+  leaf: { style: 'leaf' },
+  recommend: { style: 'leafPos' },
+  avoid: { style: 'leafNeg' },
 };
+
+// Flowchart styles <-> their annotation keyword (inverse of ROLE_KEYWORDS above).
+const STYLE_TO_KEYWORD = { decision: 'decision', leaf: 'leaf', leafPos: 'recommend', leafNeg: 'avoid' };
 
 const ID = '[A-Za-z][A-Za-z0-9]*';
 
@@ -45,10 +55,11 @@ export function parse(text) {
     }
     return nodeMap.get(id);
   };
-  const addEdge = (from, to, style = 'causal') => {
-    if (!model.edges.some((e) => e.from === from && e.to === to && e.style === style)) {
-      model.edges.push({ from, to, style, bend: 0 });
-    }
+  const addEdge = (from, to, style = 'causal', label = null) => {
+    let e = model.edges.find((x) => x.from === from && x.to === to && x.style === style);
+    if (!e) { e = { from, to, style, bend: 0 }; model.edges.push(e); }
+    if (label != null) { e.label = label; e.labelPos = 'above'; }
+    return e;
   };
 
   const lines = text.split(/[\n;]+/);
@@ -94,6 +105,14 @@ function parseStatement(s, ensure, addEdge) {
     addEdge(m[1], m[2], 'bidirected');
     return true;
   }
+  // Labelled single arrow: a -> b : label  (quotes optional; branch condition)
+  m = new RegExp(`^(${ID})\\s*->\\s*(${ID})\\s*:\\s*(.+)$`).exec(s);
+  if (m) {
+    ensure(m[1]); ensure(m[2]);
+    const label = m[3].trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
+    addEdge(m[1], m[2], 'causal', label);
+    return true;
+  }
   // Arrow chain: a -> b -> c
   if (/->/.test(s) && !s.includes('~')) {
     const parts = s.split('->').map((p) => p.trim());
@@ -129,9 +148,11 @@ export function emit(model) {
   const byRole = {};
   const unmeasured = [];
   const adjusted = [];
+  const flowchart = { decision: [], leaf: [], leafPos: [], leafNeg: [] };
   for (const n of model.nodes) {
     if (n.style === 'unobs') unmeasured.push(n.id);
     else if (n.style === 'cond') adjusted.push(n.id);
+    else if (flowchart[n.style]) flowchart[n.style].push(n.id);
     if (n.role && ROLES.includes(n.role) && n.role !== 'latent') (byRole[n.role] ||= []).push(n.id);
   }
   for (const role of ['exposure', 'outcome', 'confounder', 'mediator', 'collider', 'instrument', 'covariate']) {
@@ -139,23 +160,33 @@ export function emit(model) {
   }
   if (unmeasured.length) lines.push(`unmeasured: ${unmeasured.join(', ')}`);
   if (adjusted.length) lines.push(`adjusted: ${adjusted.join(', ')}`);
+  for (const style of ['decision', 'leaf', 'leafPos', 'leafNeg']) {
+    if (flowchart[style].length) lines.push(`${STYLE_TO_KEYWORD[style]}: ${flowchart[style].join(', ')}`);
+  }
   if (lines.length) lines.push('');
 
-  // Structural formulas, one line per child that has causal parents.
+  // Structural formulas, one line per child that has causal parents. Labelled
+  // causal edges emit as their own `from -> to : "label"` line (the `~` form
+  // can't carry a per-parent label), so they're pulled out of the grouping.
   const causalParents = {};
+  const labelled = [];
   const bidirected = [];
   for (const e of model.edges) {
     if (e.style === 'bidirected') bidirected.push(e);
-    else if (e.style === 'causal' || e.style === 'cfedge' || e.style === 'det') (causalParents[e.to] ||= []).push(e.from);
+    else if (e.style === 'causal' || e.style === 'cfedge' || e.style === 'det') {
+      if (e.label) labelled.push(e);
+      else (causalParents[e.to] ||= []).push(e.from);
+    }
   }
   const withParents = new Set(Object.keys(causalParents));
   for (const n of model.nodes) {
     if (causalParents[n.id]) lines.push(`${n.id} ~ ${causalParents[n.id].join(' + ')}`);
   }
+  for (const e of labelled) { lines.push(`${e.from} -> ${e.to} : "${e.label}"`); withParents.add(e.to); }
   for (const e of bidirected) lines.push(`${e.from} <-> ${e.to}`);
 
   // Isolated nodes (no parents, no bidirected, no role annotation) — preserve them.
-  const annotated = new Set([...unmeasured, ...adjusted, ...Object.values(byRole).flat()]);
+  const annotated = new Set([...unmeasured, ...adjusted, ...Object.values(byRole).flat(), ...Object.values(flowchart).flat()]);
   const inBidir = new Set(bidirected.flatMap((e) => [e.from, e.to]));
   const hasChildren = new Set(model.edges.map((e) => e.from));
   for (const n of model.nodes) {
