@@ -44,7 +44,21 @@ describe('point-at signal', () => {
     expect(sig.title).toContain('edge');
   });
 
+  it('emits one signal covering several handles (multi-select)', async () => {
+    const r = await emitPointAt({ handles: [
+      { handle: '@node:X', label: '$X$', style: 'rv' },
+      { handle: '@node:V0', label: '$V0$', style: 'rv' },
+      { handle: '@edge:A->V1', style: 'causal' },
+    ] });
+    expect(r.handles).toEqual(['@node:X', '@node:V0', '@edge:A->V1']);
+    const sig = await readSignal(r.signal_id);
+    expect(sig.title).toContain('@node:X');
+    expect(sig.title).toContain('@edge:A->V1');
+    expect(sig.title).toContain('3 elements');
+  });
+
   it('rejects a missing handle', async () => {
     await expect(emitPointAt({})).rejects.toThrow(/handle/);
+    await expect(emitPointAt({ handles: [] })).rejects.toThrow(/handle/);
   });
 });

@@ -42,12 +42,21 @@ async function writeAtomic(path, data) {
   await rename(tmp, path);
 }
 
-// Emit one point-at signal. `handle` is the durable grammar id (@node:severe /
-// @edge:A->Y); `png` is an optional data-URL crop of the element. Returns a small
-// receipt for the UI status line.
-export async function emitPointAt({ handle, label, style, source, png } = {}) {
-  handle = oneLine(handle, 120);
-  if (!handle) throw new Error('handle is required');
+// One-element title: `@node:severe — severe (node, leaf)`.
+function oneTitle({ handle, label, style }) {
+  const kindWord = handle.startsWith('@edge:') ? 'edge' : 'node';
+  const meta = [label ? `— ${stripTex(label)}` : '', `(${[kindWord, style].filter(Boolean).join(', ')})`];
+  return [handle, ...meta].filter(Boolean).join(' ');
+}
+
+// Emit one point-at signal covering one or more selected elements. Pass `handles`
+// (an array of {handle,label,style}) for multi-select, or the singular `handle`
+// shorthand; `png` is an optional data-URL crop (the union bbox for multi). Returns
+// a small receipt for the UI status line.
+export async function emitPointAt({ handles, handle, label, style, source, png } = {}) {
+  let list = Array.isArray(handles) ? handles : (handle ? [{ handle, label, style }] : []);
+  list = list.map((h) => ({ handle: oneLine(h.handle, 120), label: h.label, style: h.style })).filter((h) => h.handle);
+  if (!list.length) throw new Error('handle is required');
   const signalDir = join(WEB_CONTEXT, 'signals');
   await mkdir(signalDir, { recursive: true });
   const signalId = newSignalId();
@@ -63,14 +72,15 @@ export async function emitPointAt({ handle, label, style, source, png } = {}) {
     await writeAtomic(contextPath, Buffer.from(png.slice(PNG_PREFIX.length), 'base64'));
   }
 
-  const kindWord = handle.startsWith('@edge:') ? 'edge' : 'node';
-  const meta = [label ? `— ${stripTex(label)}` : '', `(${[kindWord, style].filter(Boolean).join(', ')})`];
+  const title = list.length === 1
+    ? oneTitle(list[0])
+    : `${list.map((h) => h.handle).join(', ')} (${list.length} elements)`;
   const signal = {
     signal_id: signalId,
     kind: 'dag-point-at',
     source: oneLine(source) || 'http://127.0.0.1:4180/',
     created_at: new Date().toISOString(),
-    title: oneLine([handle, ...meta].filter(Boolean).join(' ')),
+    title: oneLine(title),
     note: null,
     session_id: null,
     cwd_hint: REPO_ROOT,
@@ -81,5 +91,5 @@ export async function emitPointAt({ handle, label, style, source, png } = {}) {
     consumed_by: null,
   };
   await writeAtomic(join(signalDir, `${signalId}.json`), JSON.stringify(signal, null, 2) + '\n');
-  return { signal_id: signalId, handle, title: signal.title, crop: contextPath };
+  return { signal_id: signalId, handle: list[0].handle, handles: list.map((h) => h.handle), title: signal.title, crop: contextPath };
 }

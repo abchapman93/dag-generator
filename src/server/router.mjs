@@ -53,8 +53,8 @@ export function createRouter() {
   // POST { handle, label?, style?, source?, png? } -> writes a point-at signal to
   // the web-context bus (~/.claude/web-context/signals/) for /session-attach.
   r.post('/api/point-at', async (req, res) => {
-    const { handle } = req.body || {};
-    if (!handle) return res.status(400).json({ error: 'missing handle' });
+    const { handle, handles } = req.body || {};
+    if (!handle && !(Array.isArray(handles) && handles.length)) return res.status(400).json({ error: 'missing handle' });
     try { res.json(await emitPointAt(req.body)); }
     catch (e) { res.status(500).json({ error: e.message }); }
   });

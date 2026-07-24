@@ -369,24 +369,42 @@ export function mount({ stage }) {
   // crop so a session can /session-attach and SEE what was pointed at.
   async function pointAt() {
     const p = await canvas.pointAt();
-    if (!p) { status('warn', null, 'select a node or edge first, then point at it'); return; }
+    if (!p || !p.handles.length) { status('warn', null, 'select a node or edge first, then point at it'); return; }
+    const handles = p.handles.map((h) => h.handle);
     let copied = false, signalled = false;
-    try { await navigator.clipboard.writeText(p.handle); copied = true; } catch { /* clipboard blocked */ }
+    try { await navigator.clipboard.writeText(handles.join(' ')); copied = true; } catch { /* clipboard blocked */ }
     try {
       const res = await fetch('/dag/api/point-at', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ handle: p.handle, label: p.label, style: p.style, source: location.href, png: p.png }),
+        body: JSON.stringify({ handles: p.handles, source: location.href, png: p.png }),
       });
       signalled = res.ok;
-    } catch { /* no server (static/embedded) — the handle is still on the clipboard */ }
+    } catch { /* no server (static/embedded) — the handles are still on the clipboard */ }
+    const label = handles.length === 1 ? handles[0] : `${handles[0]} +${handles.length - 1} more`;
     const done = [copied && 'copied', signalled && 'signalled'].filter(Boolean).join(' & ');
-    status('ok', null, `⌖ ${p.handle}${done ? ` — ${done}` : ' — copy blocked; no session bus'}`);
+    status('ok', null, `⌖ ${label}${done ? ` — ${done}` : ' — copy blocked; no session bus'}`);
+  }
+
+  // Resolve a selection-set item to its display handle (for the multi-select summary).
+  function handleOf(item) {
+    if (item.type === 'node') { const n = model.nodes.find((x) => x.id === item.id); return n ? `@node:${n.id}` : ''; }
+    const e = model.edges[item.index]; return e ? `@edge:${e.from}->${e.to}` : '';
   }
 
   // ---- inspector ----
   function renderInspector(sel) {
     const box = $('.dg-inspector');
-    if (!sel) { box.innerHTML = '<p class="dg-muted">Select a node or edge to edit it.</p>'; return; }
+    const items = Array.isArray(sel) ? sel : (sel ? [sel] : []);
+    if (items.length === 0) { box.innerHTML = '<p class="dg-muted">Select a node or edge to edit it. Shift-click or shift-drag to select several, then ⌖ point at all.</p>'; return; }
+    if (items.length > 1) {
+      box.innerHTML = `<h4>${items.length} selected</h4>
+        <p class="dg-muted">${items.map(handleOf).map(esc).join('<br>')}</p>
+        <button class="dg-btn dg-swig-btn" data-act="pointAtAll">⌖ point at all (${items.length})</button>
+        <p class="dg-muted">Shift-click to add/remove; ⌖ or press <kbd>p</kbd> to point at them together.</p>`;
+      $('[data-act=pointAtAll]').addEventListener('click', pointAt);
+      return;
+    }
+    sel = items[0];
     if (sel.type === 'node') {
       const n = model.nodes.find((x) => x.id === sel.id); if (!n) { box.innerHTML = ''; return; }
       box.innerHTML = `

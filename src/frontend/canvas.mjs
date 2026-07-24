@@ -30,12 +30,18 @@ export function createCanvas(host, cbs) {
   host.appendChild(svg);
 
   let model = null, style = 'informal', swigStyle = 'superscript', view = null;
-  let selection = null;      // { type:'node'|'edge', id|index }
+  let selection = [];        // set of { type:'node', id } | { type:'edge', index }
   let mode = 'select';       // 'select' | 'addEdge'
   let edgeFrom = null;       // pending source in addEdge mode
-  let drag = null, edgeDrag = null;
+  let drag = null, edgeDrag = null, band = null;   // band = rubber-band select rect (px)
   let zoom = 1, pan = { x: 0, y: 0 }, panning = null;   // view transform (zoom + drag-to-pan)
   const capture = (el, id) => { try { el.setPointerCapture(id); } catch { /* no active pointer */ } };
+  const isNodeSel = (id) => selection.some((s) => s.type === 'node' && s.id === id);
+  const isEdgeSel = (i) => selection.some((s) => s.type === 'edge' && s.index === i);
+  const toggleSel = (item) => {
+    const i = selection.findIndex((s) => s.type === item.type && (item.type === 'node' ? s.id === item.id : s.index === item.index));
+    if (i >= 0) selection.splice(i, 1); else selection.push(item);
+  };
 
   function fit(m) {
     const ns = m.nodes;
@@ -112,6 +118,11 @@ export function createCanvas(host, cbs) {
     model.edges.forEach((e, i) => { s += edgeSVG(e, i, pos); });
     model.nodes.forEach((n) => { s += nodeSVG(n, pos[n.id]); });
     s += (model.swig?.interventions || []).map((iv) => splitbarSVG(iv, pos)).join('');
+    if (band) {
+      const x = Math.min(band.x0, band.x1), y = Math.min(band.y0, band.y1);
+      const w = Math.abs(band.x1 - band.x0), h = Math.abs(band.y1 - band.y0);
+      s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#2f6df6" fill-opacity="0.08" stroke="#2f6df6" stroke-width="1" stroke-dasharray="4 3" style="pointer-events:none"/>`;
+    }
     svg.innerHTML = s;
     bind(pos);
     cbs.onStatus?.(mode, edgeFrom);
@@ -146,7 +157,7 @@ export function createCanvas(host, cbs) {
       d = `M${ax},${ay} Q${cx},${cy} ${bx},${by}`;
       mid = { x: 0.25 * ax + 0.5 * cx + 0.25 * bx, y: 0.25 * ay + 0.5 * cy + 0.25 * by };
     } else { d = `M${ax},${ay} L${bx},${by}`; mid = { x: (ax + bx) / 2, y: (ay + by) / 2 }; }
-    const sel = selection && selection.type === 'edge' && selection.index === i;
+    const sel = isEdgeSel(i);
     const start = e.style === 'bidirected' ? ` marker-start="url(#m-${e.style})"` : '';
     return `<g class="dg-edge" data-edge="${i}">`
       + `<path d="${d}" fill="none" stroke="transparent" stroke-width="12"/>`
@@ -168,7 +179,7 @@ export function createCanvas(host, cbs) {
 
   function nodeSVG(n, p) {
     const v = nodeVisual(n);
-    const sel = selection && selection.type === 'node' && selection.id === n.id;
+    const sel = isNodeSel(n.id);
     const pending = edgeFrom === n.id;
     let shape = '';
     const dash = v.dashed ? ' stroke-dasharray="5 4"' : '';
@@ -206,7 +217,8 @@ export function createCanvas(host, cbs) {
       g.addEventListener('pointerdown', (ev) => {
         ev.preventDefault(); ev.stopPropagation();
         if (mode === 'addEdge') { handleEdgePick(id); return; }
-        selection = { type: 'node', id };
+        if (ev.shiftKey) { toggleSel({ type: 'node', id }); render(); cbs.onSelect?.(selection); return; }
+        if (!isNodeSel(id)) selection = [{ type: 'node', id }];   // plain click on a new node → replace
         drag = { id, moved: false };
         capture(g, ev.pointerId);
         render(); cbs.onSelect?.(selection);
@@ -217,7 +229,8 @@ export function createCanvas(host, cbs) {
         if (mode === 'addEdge') return;
         ev.stopPropagation();
         const index = +g.getAttribute('data-edge');
-        selection = { type: 'edge', index };
+        if (ev.shiftKey) { toggleSel({ type: 'edge', index }); render(); cbs.onSelect?.(selection); return; }
+        if (!isEdgeSel(index)) selection = [{ type: 'edge', index }];
         edgeDrag = { index };                 // click = select; drag = arc
         capture(svg, ev.pointerId);
         render(); cbs.onSelect?.(selection);
@@ -236,6 +249,7 @@ export function createCanvas(host, cbs) {
   }
 
   svg.addEventListener('pointermove', (ev) => {
+    if (band) { const u = clientToUser(ev.clientX, ev.clientY); band.x1 = u.x; band.y1 = u.y; render(); return; }
     if (drag) {
       const g = px2grid(ev.clientX, ev.clientY);
       const n = model.nodes.find((x) => x.id === drag.id);
@@ -263,19 +277,41 @@ export function createCanvas(host, cbs) {
       render();
     }
   });
-  const endGesture = () => { drag = null; edgeDrag = null; if (panning) { panning = null; svg.style.cursor = ''; } };
+  const endGesture = () => {
+    if (band) { commitBand(); band = null; render(); }
+    drag = null; edgeDrag = null; if (panning) { panning = null; svg.style.cursor = ''; }
+  };
   svg.addEventListener('pointerup', endGesture);
   svg.addEventListener('pointercancel', endGesture);
-  // Empty-canvas press: deselect, then drag to pan.
+  // Empty-canvas press: shift-drag rubber-bands a selection (additive); a plain press
+  // deselects, then drags to pan.
   svg.addEventListener('pointerdown', (ev) => {
     if (mode === 'addEdge') return;
-    if (selection) { selection = null; cbs.onSelect?.(null); }
+    if (ev.shiftKey) { const u = clientToUser(ev.clientX, ev.clientY); band = { x0: u.x, y0: u.y, x1: u.x, y1: u.y }; capture(svg, ev.pointerId); render(); return; }
+    if (selection.length) { selection = []; cbs.onSelect?.(selection); }
     const ctm = svg.getScreenCTM();
     panning = { sx: ev.clientX, sy: ev.clientY, px: pan.x, py: pan.y, a: ctm.a, d: ctm.d };
     capture(svg, ev.pointerId);
     svg.style.cursor = 'grabbing';
     render();
   });
+  // Rubber-band → add every node inside the box (and every edge whose both ends are
+  // inside) to the selection set. A too-small box is a no-op (it was just a mis-click).
+  function commitBand() {
+    const minx = Math.min(band.x0, band.x1), maxx = Math.max(band.x0, band.x1);
+    const miny = Math.min(band.y0, band.y1), maxy = Math.max(band.y0, band.y1);
+    if (maxx - minx < 4 && maxy - miny < 4) return;
+    const pos = {}; model.nodes.forEach((n) => (pos[n.id] = { x: gx2px(n.x), y: gy2px(n.y) }));
+    const inside = (p) => p && p.x >= minx && p.x <= maxx && p.y >= miny && p.y <= maxy;
+    model.nodes.forEach((n) => { if (inside(pos[n.id]) && !isNodeSel(n.id)) selection.push({ type: 'node', id: n.id }); });
+    model.edges.forEach((e, i) => { if (inside(pos[e.from]) && inside(pos[e.to]) && !isEdgeSel(i)) selection.push({ type: 'edge', index: i }); });
+    cbs.onSelect?.(selection);
+  }
+  function clientToUser(clientX, clientY) {
+    const pt = svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
+    const u = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return { x: u.x, y: u.y };
+  }
   // Wheel to zoom (centered).
   svg.addEventListener('wheel', (ev) => {
     ev.preventDefault();
@@ -284,34 +320,36 @@ export function createCanvas(host, cbs) {
 
   function setZoom(z) { zoom = Math.min(6, Math.max(0.25, z)); render(); cbs.onZoom?.(zoom); }
 
-  // ---- point-at (resolve the current selection to a durable grammar handle) ----
-  // The canvas owns its grammar, so the id IS the handle — no DOM/identity
-  // reconstruction needed. Returns { handle, kind, label, style, png } or null.
-  async function pointAt() {
-    if (!selection) return null;
-    let handle, label = '', style = '', el;
-    if (selection.type === 'node') {
-      const n = model.nodes.find((x) => x.id === selection.id);
-      if (!n) return null;
-      handle = `@node:${n.id}`; label = n.label || ''; style = n.style || '';
-      el = svg.querySelector(`.dg-node[data-id="${cssEscape(n.id)}"]`);
-    } else {
-      const e = model.edges[selection.index];
-      if (!e) return null;
-      handle = `@edge:${e.from}->${e.to}`; label = e.label || ''; style = e.style || '';
-      el = svg.querySelector(`.dg-edge[data-edge="${selection.index}"]`);
+  // ---- point-at (resolve the selection set to durable grammar handles) ----
+  // The canvas owns its grammar, so each id IS the handle — no DOM/identity
+  // reconstruction needed. Returns { handles: [{handle,label,style}], png } (one crop
+  // of the union bbox of every selected element), or null when nothing is selected.
+  function itemDescriptor(sel) {
+    if (sel.type === 'node') {
+      const n = model.nodes.find((x) => x.id === sel.id); if (!n) return null;
+      return { handle: `@node:${n.id}`, label: n.label || '', style: n.style || '', el: svg.querySelector(`.dg-node[data-id="${cssEscape(n.id)}"]`) };
     }
-    return { handle, kind: selection.type, label, style, png: el ? await elementCrop(el) : null };
+    const e = model.edges[sel.index]; if (!e) return null;
+    return { handle: `@edge:${e.from}->${e.to}`, label: e.label || '', style: e.style || '', el: svg.querySelector(`.dg-edge[data-edge="${sel.index}"]`) };
+  }
+  async function pointAt() {
+    if (!selection.length) return null;
+    const items = selection.map(itemDescriptor).filter(Boolean);
+    if (!items.length) return null;
+    const png = await elementsCrop(items.map((i) => i.el).filter(Boolean));
+    return { handles: items.map(({ handle, label, style }) => ({ handle, label, style })), png };
   }
 
-  // PNG crop of one rendered element: its bbox + padding, rasterized off a clone
-  // of the live SVG (so markers/labels/grid come along). Best-effort — a failure
-  // returns null and the caller still emits the text handle.
-  async function elementCrop(el) {
+  // PNG crop of one or more rendered elements: the union of their bboxes + padding,
+  // rasterized off a clone of the live SVG (so markers/labels/grid come along).
+  // Best-effort — a failure returns null and the caller still emits the text handles.
+  async function elementsCrop(els) {
     try {
-      const bb = el.getBBox();
+      if (!els.length) return null;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      els.forEach((el) => { const b = el.getBBox(); x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height); });
       const pad = 26, scale = 2;
-      const x = bb.x - pad, y = bb.y - pad, w = bb.width + pad * 2, h = bb.height + pad * 2;
+      const x = x0 - pad, y = y0 - pad, w = (x1 - x0) + pad * 2, h = (y1 - y0) + pad * 2;
       const clone = svg.cloneNode(true);
       clone.removeAttribute('class');
       clone.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
@@ -345,17 +383,16 @@ export function createCanvas(host, cbs) {
     rerender() { render(); },
     pointAt,
     getSelection() { return selection; },
-    selectNode(id) { if (model.nodes.some((n) => n.id === id)) { selection = { type: 'node', id }; render(); cbs.onSelect?.(selection); } },
-    clearSelection() { selection = null; render(); cbs.onSelect?.(null); },
+    selectNode(id) { if (model.nodes.some((n) => n.id === id)) { selection = [{ type: 'node', id }]; render(); cbs.onSelect?.(selection); } },
+    clearSelection() { selection = []; render(); cbs.onSelect?.(selection); },
     deleteSelection() {
-      if (!selection) return;
-      if (selection.type === 'node') {
-        model.nodes = model.nodes.filter((n) => n.id !== selection.id);
-        model.edges = model.edges.filter((e) => e.from !== selection.id && e.to !== selection.id);
-      } else {
-        model.edges.splice(selection.index, 1);
-      }
-      selection = null; render(); cbs.onChange?.(); cbs.onSelect?.(null);
+      if (!selection.length) return;
+      const nodeIds = new Set(selection.filter((s) => s.type === 'node').map((s) => s.id));
+      // Resolve selected edges to identities before mutating (indices shift on delete).
+      const edgeKeys = new Set(selection.filter((s) => s.type === 'edge').map((s) => model.edges[s.index]).filter(Boolean).map((e) => `${e.from}->${e.to}:${e.style}`));
+      model.nodes = model.nodes.filter((n) => !nodeIds.has(n.id));
+      model.edges = model.edges.filter((e) => !nodeIds.has(e.from) && !nodeIds.has(e.to) && !edgeKeys.has(`${e.from}->${e.to}:${e.style}`));
+      selection = []; render(); cbs.onChange?.(); cbs.onSelect?.(selection);
     },
   };
 }
