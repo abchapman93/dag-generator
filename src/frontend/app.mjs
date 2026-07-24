@@ -373,12 +373,20 @@ export function mount({ stage }) {
         ${field('label', `<input id="i-label" value="${esc(n.label)}">`)}
         ${field('style', select('i-style', NODE_STYLES, n.style))}
         ${field('role', select('i-role', ['(none)', ...ROLES], n.role || '(none)'))}
+        ${field('fill', `<input id="i-fill" value="${esc(n.fill || '')}" placeholder="xcolor e.g. green!15" spellcheck="false">`)}
+        ${field('stroke', `<input id="i-stroke" value="${esc(n.stroke || '')}" placeholder="e.g. green!55!black" spellcheck="false">`)}
+        ${field('text', `<input id="i-text" value="${esc(n.text || '')}" placeholder="label colour" spellcheck="false">`)}
         <p class="dg-muted">pos (${n.x}, ${n.y})</p>
         <button class="dg-btn dg-swig-btn" id="i-intervene">⋔ Intervene → SWIG</button>`;
       $('#i-id').addEventListener('change', (e) => renameNode(n.id, e.target.value.trim()));
       $('#i-label').addEventListener('input', (e) => { n.label = e.target.value; canvas.rerender(); regenPanels(); invalidateRevert(); });
       $('#i-style').addEventListener('change', (e) => { n.style = e.target.value; canvas.rerender(); regenPanels(); invalidateRevert(); });
       $('#i-role').addEventListener('change', (e) => { const v = e.target.value; if (v === '(none)') delete n.role; else n.role = v; canvas.rerender(); regenPanels(); invalidateRevert(); });
+      // Colour overrides: comma-free xcolor expressions; empty clears the override.
+      const setNodeColour = (key, val) => { val = val.trim(); if (val) n[key] = val; else delete n[key]; canvas.rerender(); regenPanels(); invalidateRevert(); };
+      $('#i-fill').addEventListener('input', (e) => setNodeColour('fill', e.target.value));
+      $('#i-stroke').addEventListener('input', (e) => setNodeColour('stroke', e.target.value));
+      $('#i-text').addEventListener('input', (e) => setNodeColour('text', e.target.value));
       $('#i-intervene').addEventListener('click', () => {
         model = intervene(model, n.id); model.meta.style = renderStyle; model.meta.swigStyle = swigStyle;
         canvas.setModel(model, { refit: true }); canvas.clearSelection();
@@ -389,6 +397,8 @@ export function mount({ stage }) {
       box.innerHTML = `
         <h4>Edge <span class="dg-muted">${esc(e.from)} → ${esc(e.to)}</span></h4>
         ${field('style', select('e-style', EDGE_STYLES, e.style))}
+        ${field('label', `<input id="e-label" value="${esc(e.label || '')}" placeholder="branch condition" spellcheck="false">`)}
+        ${field('label pos', select('e-labelpos', ['above', 'below', 'left', 'right'], e.labelPos || 'above'))}
         <label class="dg-field"><span>arc</span><span class="dg-arc">
           <button data-arc="-30" title="arc left">⤴</button>
           <button data-arc="0" title="straight">—</button>
@@ -397,6 +407,13 @@ export function mount({ stage }) {
         </span></label>
         <p class="dg-muted">…or drag the edge on the canvas to arc it.</p>`;
       $('#e-style').addEventListener('change', (ev) => { e.style = ev.target.value; canvas.rerender(); regenPanels(); invalidateRevert(); });
+      // Edge label: empty clears both label and its position; a new label defaults to 'above'.
+      $('#e-label').addEventListener('input', (ev) => {
+        const v = ev.target.value;
+        if (v) { e.label = v; if (!e.labelPos) e.labelPos = 'above'; } else { delete e.label; delete e.labelPos; }
+        canvas.rerender(); regenPanels(); invalidateRevert();
+      });
+      $('#e-labelpos').addEventListener('change', (ev) => { if (e.label) { e.labelPos = ev.target.value; canvas.rerender(); regenPanels(); invalidateRevert(); } });
       $('#e-bend').addEventListener('input', (ev) => { e.bend = parseInt(ev.target.value, 10) || 0; canvas.rerender(); regenPanels(); invalidateRevert(); });
       box.querySelectorAll('[data-arc]').forEach((b) => b.addEventListener('click', () => {
         e.bend = parseInt(b.dataset.arc, 10); canvas.rerender(); regenPanels(); invalidateRevert(); renderInspector(sel);
