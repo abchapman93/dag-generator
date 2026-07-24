@@ -328,27 +328,35 @@ export function mount({ stage }) {
   }
 
   // Show the OS Save dialog (File System Access API) so the user picks the folder;
-  // fall back to a normal download when the API is unavailable or cancelled.
+  // fall back to a normal download when the API is unavailable, cancelled, or the
+  // write is blocked (sandboxed iframes / embedded browser panes expose the picker
+  // but forbid createWritable).
   async function saveOut(name, mime, ext, produce) {
+    const toBlob = (data) => (data instanceof Blob ? data : new Blob([data], { type: mime }));
     if (window.showSaveFilePicker) {
       let handle;
       try {
         handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: ext.toUpperCase(), accept: { [mime]: ['.' + ext] } }] });
       } catch (e) { if (e.name === 'AbortError') { status('ok'); return; } handle = null; }
       if (handle) {
+        let data;
+        try { data = await produce(); } catch (e) { status('warn', null, e.message); return; }
         try {
-          const data = await produce();
           const w = await handle.createWritable();
-          await w.write(data instanceof Blob ? data : new Blob([data], { type: mime }));
+          await w.write(toBlob(data));
           await w.close();
           status('ok', null, `saved ${handle.name}`);
-        } catch (e) { status('warn', null, e.message); }
+        } catch (e) {
+          // Picker granted but the write was refused — download the produced data.
+          downloadBlob(name, toBlob(data));
+          status('ok', null, `downloaded ${name}`);
+        }
         return;
       }
     }
     try {
       const data = await produce();
-      downloadBlob(name, data instanceof Blob ? data : new Blob([data], { type: mime }));
+      downloadBlob(name, toBlob(data));
       status('ok', null, `downloaded ${name}`);
     } catch (e) { status('warn', null, e.message); }
   }
