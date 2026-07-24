@@ -6,6 +6,7 @@
 import express from 'express';
 import { detectTools, compile } from './compile.mjs';
 import { listConfigs, readConfig, writeConfig, deleteConfig } from './configs.mjs';
+import { emitPointAt } from './pointat.mjs';
 
 const MIME = { pdf: 'application/pdf', svg: 'image/svg+xml', png: 'image/png' };
 
@@ -47,6 +48,15 @@ export function createRouter() {
     } catch (e) {
       res.status(e.code === 'NO_LATEX' ? 501 : 500).json({ error: e.message, code: e.code || null });
     }
+  });
+
+  // POST { handle, label?, style?, source?, png? } -> writes a point-at signal to
+  // the web-context bus (~/.claude/web-context/signals/) for /session-attach.
+  r.post('/api/point-at', async (req, res) => {
+    const { handle } = req.body || {};
+    if (!handle) return res.status(400).json({ error: 'missing handle' });
+    try { res.json(await emitPointAt(req.body)); }
+    catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   return r;

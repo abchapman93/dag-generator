@@ -284,6 +284,53 @@ export function createCanvas(host, cbs) {
 
   function setZoom(z) { zoom = Math.min(6, Math.max(0.25, z)); render(); cbs.onZoom?.(zoom); }
 
+  // ---- point-at (resolve the current selection to a durable grammar handle) ----
+  // The canvas owns its grammar, so the id IS the handle — no DOM/identity
+  // reconstruction needed. Returns { handle, kind, label, style, png } or null.
+  async function pointAt() {
+    if (!selection) return null;
+    let handle, label = '', style = '', el;
+    if (selection.type === 'node') {
+      const n = model.nodes.find((x) => x.id === selection.id);
+      if (!n) return null;
+      handle = `@node:${n.id}`; label = n.label || ''; style = n.style || '';
+      el = svg.querySelector(`.dg-node[data-id="${cssEscape(n.id)}"]`);
+    } else {
+      const e = model.edges[selection.index];
+      if (!e) return null;
+      handle = `@edge:${e.from}->${e.to}`; label = e.label || ''; style = e.style || '';
+      el = svg.querySelector(`.dg-edge[data-edge="${selection.index}"]`);
+    }
+    return { handle, kind: selection.type, label, style, png: el ? await elementCrop(el) : null };
+  }
+
+  // PNG crop of one rendered element: its bbox + padding, rasterized off a clone
+  // of the live SVG (so markers/labels/grid come along). Best-effort — a failure
+  // returns null and the caller still emits the text handle.
+  async function elementCrop(el) {
+    try {
+      const bb = el.getBBox();
+      const pad = 26, scale = 2;
+      const x = bb.x - pad, y = bb.y - pad, w = bb.width + pad * 2, h = bb.height + pad * 2;
+      const clone = svg.cloneNode(true);
+      clone.removeAttribute('class');
+      clone.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+      clone.setAttribute('width', w * scale); clone.setAttribute('height', h * scale);
+      clone.innerHTML = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#ffffff"/>` + clone.innerHTML;
+      const str = new XMLSerializer().serializeToString(clone);
+      const blob = new Blob([str], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      try {
+        const img = new Image();
+        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+        const c = document.createElement('canvas'); c.width = w * scale; c.height = h * scale;
+        c.getContext('2d').drawImage(img, 0, 0, w * scale, h * scale);
+        return c.toDataURL('image/png');
+      } finally { URL.revokeObjectURL(url); }
+    } catch { return null; }
+  }
+  const cssEscape = (s) => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&');
+
   // ---- public API ----
   return {
     setModel(m, { refit = true } = {}) { model = m; if (refit) { fit(m); zoom = 1; pan = { x: 0, y: 0 }; } render(); },
@@ -296,6 +343,7 @@ export function createCanvas(host, cbs) {
     zoomOut() { setZoom(zoom / 1.25); },
     getZoom() { return zoom; },
     rerender() { render(); },
+    pointAt,
     getSelection() { return selection; },
     selectNode(id) { if (model.nodes.some((n) => n.id === id)) { selection = { type: 'node', id }; render(); cbs.onSelect?.(selection); } },
     clearSelection() { selection = null; render(); cbs.onSelect?.(null); },

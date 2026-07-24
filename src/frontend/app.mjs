@@ -119,6 +119,7 @@ export function mount({ stage }) {
     canvas.setMode(canvas.getMode() === 'addEdge' ? 'select' : 'addEdge');
   });
   $('[data-act=del]').addEventListener('click', () => canvas.deleteSelection());
+  $('[data-act=pointAt]').addEventListener('click', pointAt);
   $('[data-act=fit]').addEventListener('click', () => canvas.refit());
   $('[data-act=zoomIn]').addEventListener('click', () => canvas.zoomIn());
   $('[data-act=zoomOut]').addEventListener('click', () => canvas.zoomOut());
@@ -140,6 +141,7 @@ export function mount({ stage }) {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !isTyping(e)) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || e.key === 'Y') && !isTyping(e)) { e.preventDefault(); redo(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && !isTyping(e)) { e.preventDefault(); canvas.deleteSelection(); }
+    if ((e.key === 'p' || e.key === 'P') && !isTyping(e) && !e.metaKey && !e.ctrlKey) { e.preventDefault(); pointAt(); return; }
     if (e.key === 'Escape') canvas.setMode('select');
   });
 
@@ -361,6 +363,26 @@ export function mount({ stage }) {
     } catch (e) { status('warn', null, e.message); }
   }
 
+  // ---- point at (show, don't tell: hand a running session what's selected) ----
+  // Resolves the selection to its grammar handle, copies it to the clipboard
+  // (works with no server), and signals the web-context bus with an optional
+  // crop so a session can /session-attach and SEE what was pointed at.
+  async function pointAt() {
+    const p = await canvas.pointAt();
+    if (!p) { status('warn', null, 'select a node or edge first, then point at it'); return; }
+    let copied = false, signalled = false;
+    try { await navigator.clipboard.writeText(p.handle); copied = true; } catch { /* clipboard blocked */ }
+    try {
+      const res = await fetch('/dag/api/point-at', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ handle: p.handle, label: p.label, style: p.style, source: location.href, png: p.png }),
+      });
+      signalled = res.ok;
+    } catch { /* no server (static/embedded) — the handle is still on the clipboard */ }
+    const done = [copied && 'copied', signalled && 'signalled'].filter(Boolean).join(' & ');
+    status('ok', null, `⌖ ${p.handle}${done ? ` — ${done}` : ' — copy blocked; no session bus'}`);
+  }
+
   // ---- inspector ----
   function renderInspector(sel) {
     const box = $('.dg-inspector');
@@ -470,6 +492,7 @@ const TEMPLATE = `
     <button class="dg-btn" data-act="addNode">+ node</button>
     <button class="dg-btn" data-act="addEdge">+ edge</button>
     <button class="dg-btn" data-act="del">delete</button>
+    <button class="dg-btn" data-act="pointAt" title="Point at the selected node/edge (p): copy its @handle and signal a running session">⌖ point at</button>
     <button class="dg-btn" data-act="relayout">auto-layout</button>
     <button class="dg-btn dg-revert" data-act="revert" hidden>↶ revert</button>
     <button class="dg-btn" data-act="fit">fit</button>
