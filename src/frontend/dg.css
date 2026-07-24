@@ -24,6 +24,14 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 .dg-menu button{font:inherit;font-size:13px;text-align:left;border:0;background:none;border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--dg-ink)}
 .dg-menu button:hover{background:var(--dg-accent-weak);color:var(--dg-accent-ink)}
 
+.dg-pointat{display:inline-flex;align-items:stretch}
+.dg-pointat-main{border-top-right-radius:0;border-bottom-right-radius:0}
+.dg-pointat-chevron{border-top-left-radius:0;border-bottom-left-radius:0;border-left:0;padding:6px 7px;font-size:11px}
+.dg-pointat-menu{min-width:230px;padding:6px}
+.dg-pointat-menu input{width:100%;box-sizing:border-box;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--dg-line);border-radius:7px;color:var(--dg-ink);margin-bottom:6px}
+.dg-pointat-menu button{text-align:center;border:1px solid var(--dg-accent);background:var(--dg-accent);color:#fff;font-size:13px}
+.dg-pointat-menu button:hover{filter:brightness(.95);background:var(--dg-accent);color:#fff}
+
 .dg-current{font-size:12.5px;color:var(--dg-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dg-configs .dg-menu{min-width:230px;padding:6px}
 .dg-cfg-new{display:block;width:100%;font:inherit;font-size:13px;font-weight:600;text-align:left;border:0;background:none;border-radius:7px;padding:7px 9px;margin-bottom:5px;cursor:pointer;color:var(--dg-accent-ink)}

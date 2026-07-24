@@ -53,7 +53,7 @@ function oneTitle({ handle, label, style }) {
 // (an array of {handle,label,style}) for multi-select, or the singular `handle`
 // shorthand; `png` is an optional data-URL crop (the union bbox for multi). Returns
 // a small receipt for the UI status line.
-export async function emitPointAt({ handles, handle, label, style, source, png } = {}) {
+export async function emitPointAt({ handles, handle, label, style, source, png, note } = {}) {
   let list = Array.isArray(handles) ? handles : (handle ? [{ handle, label, style }] : []);
   list = list.map((h) => ({ handle: oneLine(h.handle, 120), label: h.label, style: h.style })).filter((h) => h.handle);
   if (!list.length) throw new Error('handle is required');
@@ -81,7 +81,7 @@ export async function emitPointAt({ handles, handle, label, style, source, png }
     source: oneLine(source) || 'http://127.0.0.1:4180/',
     created_at: new Date().toISOString(),
     title: oneLine(title),
-    note: null,
+    note: oneLine(note),   // Alec's optional instruction; untrusted — a session surfaces, not auto-runs it
     session_id: null,
     cwd_hint: REPO_ROOT,
     contract_url: null,

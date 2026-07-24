@@ -57,6 +57,12 @@ describe('point-at signal', () => {
     expect(sig.title).toContain('3 elements');
   });
 
+  it('carries an optional note, flattened', async () => {
+    const r = await emitPointAt({ handle: '@node:X', note: 'make this   green\nplease' });
+    const sig = await readSignal(r.signal_id);
+    expect(sig.note).toBe('make this green please');   // whitespace/newlines flattened
+  });
+
   it('rejects a missing handle', async () => {
     await expect(emitPointAt({})).rejects.toThrow(/handle/);
     await expect(emitPointAt({ handles: [] })).rejects.toThrow(/handle/);

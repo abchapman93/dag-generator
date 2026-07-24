@@ -119,7 +119,9 @@ export function mount({ stage }) {
     canvas.setMode(canvas.getMode() === 'addEdge' ? 'select' : 'addEdge');
   });
   $('[data-act=del]').addEventListener('click', () => canvas.deleteSelection());
-  $('[data-act=pointAt]').addEventListener('click', pointAt);
+  $('[data-act=pointAt]').addEventListener('click', () => pointAt());   // main click: no note
+  $('[data-act=pointAtNote]').addEventListener('click', firePointAtWithNote);
+  $('#pointat-note').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); firePointAtWithNote(); } });
   $('[data-act=fit]').addEventListener('click', () => canvas.refit());
   $('[data-act=zoomIn]').addEventListener('click', () => canvas.zoomIn());
   $('[data-act=zoomOut]').addEventListener('click', () => canvas.zoomOut());
@@ -367,22 +369,32 @@ export function mount({ stage }) {
   // Resolves the selection to its grammar handle, copies it to the clipboard
   // (works with no server), and signals the web-context bus with an optional
   // crop so a session can /session-attach and SEE what was pointed at.
-  async function pointAt() {
+  async function pointAt(note) {
     const p = await canvas.pointAt();
     if (!p || !p.handles.length) { status('warn', null, 'select a node or edge first, then point at it'); return; }
     const handles = p.handles.map((h) => h.handle);
+    const clip = note ? `${handles.join(' ')} — ${note}` : handles.join(' ');
     let copied = false, signalled = false;
-    try { await navigator.clipboard.writeText(handles.join(' ')); copied = true; } catch { /* clipboard blocked */ }
+    try { await navigator.clipboard.writeText(clip); copied = true; } catch { /* clipboard blocked */ }
     try {
       const res = await fetch('/dag/api/point-at', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ handles: p.handles, source: location.href, png: p.png }),
+        body: JSON.stringify({ handles: p.handles, note: note || undefined, source: location.href, png: p.png }),
       });
       signalled = res.ok;
     } catch { /* no server (static/embedded) — the handles are still on the clipboard */ }
     const label = handles.length === 1 ? handles[0] : `${handles[0]} +${handles.length - 1} more`;
     const done = [copied && 'copied', signalled && 'signalled'].filter(Boolean).join(' & ');
-    status('ok', null, `⌖ ${label}${done ? ` — ${done}` : ' — copy blocked; no session bus'}`);
+    status('ok', null, `⌖ ${label}${note ? ' + note' : ''}${done ? ` — ${done}` : ' — copy blocked; no session bus'}`);
+  }
+
+  // The chevron dropdown: point at the current selection with a typed note, then
+  // clear the field and close the menu.
+  function firePointAtWithNote() {
+    const inp = $('#pointat-note');
+    pointAt(inp.value.trim() || undefined);
+    inp.value = '';
+    const d = stage.querySelector('.dg-pointat-more'); if (d) d.open = false;
   }
 
   // Resolve a selection-set item to its display handle (for the multi-select summary).
@@ -401,7 +413,7 @@ export function mount({ stage }) {
         <p class="dg-muted">${items.map(handleOf).map(esc).join('<br>')}</p>
         <button class="dg-btn dg-swig-btn" data-act="pointAtAll">⌖ point at all (${items.length})</button>
         <p class="dg-muted">Shift-click to add/remove; ⌖ or press <kbd>p</kbd> to point at them together.</p>`;
-      $('[data-act=pointAtAll]').addEventListener('click', pointAt);
+      $('[data-act=pointAtAll]').addEventListener('click', () => pointAt());
       return;
     }
     sel = items[0];
@@ -510,7 +522,16 @@ const TEMPLATE = `
     <button class="dg-btn" data-act="addNode">+ node</button>
     <button class="dg-btn" data-act="addEdge">+ edge</button>
     <button class="dg-btn" data-act="del">delete</button>
-    <button class="dg-btn" data-act="pointAt" title="Point at the selected node/edge (p): copy its @handle and signal a running session">⌖ point at</button>
+    <span class="dg-pointat">
+      <button class="dg-btn dg-pointat-main" data-act="pointAt" title="Point at the selected node/edge (p): copy its @handle and signal a running session">⌖ point at</button>
+      <details class="dg-export dg-pointat-more">
+        <summary class="dg-btn dg-pointat-chevron" title="point at with a note">▾</summary>
+        <div class="dg-menu dg-pointat-menu">
+          <input id="pointat-note" placeholder="add a note, e.g. make this green…" spellcheck="false">
+          <button data-act="pointAtNote">⌖ point at with note</button>
+        </div>
+      </details>
+    </span>
     <button class="dg-btn" data-act="relayout">auto-layout</button>
     <button class="dg-btn dg-revert" data-act="revert" hidden>↶ revert</button>
     <button class="dg-btn" data-act="fit">fit</button>
