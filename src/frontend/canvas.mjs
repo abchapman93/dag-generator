@@ -3,7 +3,7 @@
 // callbacks; it never owns the model — app.mjs does. Uses an SVG viewBox +
 // getScreenCTM so hit-testing is correct at any display scale.
 
-import { tex2disp } from '/engine/svg.mjs';
+import { tex2disp, xcolorToHex, FLOW } from '/engine/svg.mjs';
 import { formatSwigLabel } from '/engine/swig.mjs';
 
 const CELL = 74;
@@ -56,22 +56,37 @@ export function createCanvas(host, cbs) {
   }
 
   function nodeVisual(node) {
-    if (style === 'manuscript') {
+    let v;
+    if (FLOW[node.style]) {
+      v = { ...FLOW[node.style] };
+    } else if (style === 'manuscript') {
       switch (node.style) {
-        case 'cond': return { shape: 'rect', fill: '#fff', stroke: '#1a1c22', text: '#1a1c22', rx: 19, ry: 17 };
-        case 'unobs': return { shape: 'none', text: '#8a8f98', rx: 15, ry: 15 };
-        case 'regime': return { shape: 'diamond', fill: '#fff', stroke: '#e07a1f', text: '#e07a1f', rx: 24, ry: 19 };
-        case 'fixed': return { shape: 'none', text: '#e07a1f', rx: 15, ry: 15 };
-        default: return { shape: 'none', text: '#1a1c22', rx: 15, ry: 15 };
+        case 'cond': v = { shape: 'rect', fill: '#fff', stroke: '#1a1c22', text: '#1a1c22', rx: 19, ry: 17 }; break;
+        case 'unobs': v = { shape: 'none', text: '#8a8f98', rx: 15, ry: 15 }; break;
+        case 'regime': v = { shape: 'diamond', fill: '#fff', stroke: '#e07a1f', text: '#e07a1f', rx: 24, ry: 19 }; break;
+        case 'fixed': v = { shape: 'none', text: '#e07a1f', rx: 15, ry: 15 }; break;
+        default: v = { shape: 'none', text: '#1a1c22', rx: 15, ry: 15 };
       }
+    } else if (node.style === 'cond') {
+      v = { shape: 'rect', fill: '#fff', stroke: '#1a1c22', text: '#1a1c22', rx: 30, ry: 22, doubled: true };
+    } else if (node.style === 'regime') {
+      v = { shape: 'diamond', fill: '#fff', stroke: '#e07a1f', text: '#e07a1f', rx: 26, ry: 21 };
+    } else if (node.style === 'fixed') {
+      v = { shape: 'none', text: '#e07a1f', rx: 15, ry: 15 };
+    } else {
+      const key = node.role || (node.style === 'unobs' ? 'latent' : 'rv');
+      const c = INFORMAL[key];
+      v = c ? { shape: 'rrect', fill: c.fill, stroke: c.stroke, text: '#1a1c22', rx: 30, ry: 22, dashed: c.dashed }
+            : { shape: 'rrect', fill: '#fff', stroke: '#c9ced6', text: '#1a1c22', rx: 30, ry: 22 };
     }
-    if (node.style === 'cond') return { shape: 'rect', fill: '#fff', stroke: '#1a1c22', text: '#1a1c22', rx: 30, ry: 22, doubled: true };
-    if (node.style === 'regime') return { shape: 'diamond', fill: '#fff', stroke: '#e07a1f', text: '#e07a1f', rx: 26, ry: 21 };
-    if (node.style === 'fixed') return { shape: 'none', text: '#e07a1f', rx: 15, ry: 15 };
-    const key = node.role || (node.style === 'unobs' ? 'latent' : 'rv');
-    const c = INFORMAL[key];
-    if (c) return { shape: 'rrect', fill: c.fill, stroke: c.stroke, text: '#1a1c22', rx: 30, ry: 22, dashed: c.dashed };
-    return { shape: 'rrect', fill: '#fff', stroke: '#c9ced6', text: '#1a1c22', rx: 30, ry: 22 };
+    // Per-node colour overrides (shared xcolor->hex mapper with the engine).
+    if (node.fill || node.stroke) {
+      if (v.shape === 'none') { v.shape = 'rrect'; v.rx = v.rx || 30; v.ry = v.ry || 22; v.fill = v.fill || '#fff'; }
+      const f = xcolorToHex(node.fill); if (f) v.fill = f;
+      const s = xcolorToHex(node.stroke); if (s) v.stroke = s;
+    }
+    const t = xcolorToHex(node.text); if (t) v.text = t;
+    return v;
   }
 
   function trim(px, py, ux, uy, v) {
@@ -124,16 +139,31 @@ export function createCanvas(host, cbs) {
     const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
     const [ax, ay] = trim(a.x, a.y, ux, uy, va);
     const [bx, by] = trim(b.x, b.y, -ux, -uy, vb);
-    let d;
+    let d, mid;
     if (e.bend) {
       const mx = (ax + bx) / 2, my = (ay + by) / 2, k = Math.tan((e.bend * Math.PI / 180) / 2);
-      d = `M${ax},${ay} Q${mx - uy * len * k * 0.5},${my + ux * len * k * 0.5} ${bx},${by}`;
-    } else d = `M${ax},${ay} L${bx},${by}`;
+      const cx = mx - uy * len * k * 0.5, cy = my + ux * len * k * 0.5;
+      d = `M${ax},${ay} Q${cx},${cy} ${bx},${by}`;
+      mid = { x: 0.25 * ax + 0.5 * cx + 0.25 * bx, y: 0.25 * ay + 0.5 * cy + 0.25 * by };
+    } else { d = `M${ax},${ay} L${bx},${by}`; mid = { x: (ax + bx) / 2, y: (ay + by) / 2 }; }
     const sel = selection && selection.type === 'edge' && selection.index === i;
     const start = e.style === 'bidirected' ? ` marker-start="url(#m-${e.style})"` : '';
     return `<g class="dg-edge" data-edge="${i}">`
       + `<path d="${d}" fill="none" stroke="transparent" stroke-width="12"/>`
-      + `<path d="${d}" fill="none" stroke="${sel ? '#2f6df6' : color}" stroke-width="${sel ? 2.6 : 1.6}"${dash} marker-end="url(#m-${e.style})"${start}/></g>`;
+      + `<path d="${d}" fill="none" stroke="${sel ? '#2f6df6' : color}" stroke-width="${sel ? 2.6 : 1.6}"${dash} marker-end="url(#m-${e.style})"${start}/>`
+      + edgeLabelSVG(e, mid) + '</g>';
+  }
+
+  // Branch-condition label near the edge midpoint (mirrors svg.mjs renderEdgeLabel);
+  // pointer-events off so it never steals edge clicks.
+  function edgeLabelSVG(e, mid) {
+    if (!e.label) return '';
+    const pos = e.labelPos || 'above';
+    let dx = 0, dy = -8, anchor = 'middle';
+    if (/below/.test(pos)) dy = 15;
+    if (/left/.test(pos)) { anchor = 'end'; dx = -7; if (!/above|below/.test(pos)) dy = 4; }
+    else if (/right/.test(pos)) { anchor = 'start'; dx = 7; if (!/above|below/.test(pos)) dy = 4; }
+    return `<text x="${mid.x + dx}" y="${mid.y + dy}" text-anchor="${anchor}" dominant-baseline="central" font-style="italic" font-size="14" fill="#3a3f47" paint-order="stroke" stroke="#fff" stroke-width="3" stroke-linejoin="round" style="pointer-events:none">${tex2disp(e.label)}</text>`;
   }
 
   function nodeSVG(n, p) {

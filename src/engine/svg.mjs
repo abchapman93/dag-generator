@@ -67,7 +67,8 @@ function extents(nodes) {
 
 // Flowchart family — decision/leaf boxes, rendered the same in both modes since
 // their colour is the point (mirrors the TikZ decision/leaf/leafPos/leafNeg set).
-const FLOW = {
+// Exported so the interactive canvas (frontend/canvas.mjs) shares one palette.
+export const FLOW = {
   decision: { shape: 'rect', fill: '#ffffff', stroke: '#1a1c22', text: '#1a1c22', rx: 34, ry: 22 },
   leaf: { shape: 'rrect', fill: '#f3f4f6', stroke: '#6b7280', text: '#1a1c22', rx: 34, ry: 22 },
   leafPos: { shape: 'rrect', fill: '#dcf5e3', stroke: '#3a9d5d', text: '#14532d', rx: 34, ry: 22 },
