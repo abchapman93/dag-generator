@@ -92,7 +92,7 @@ export function createCanvas(host, cbs) {
       const s = xcolorToHex(node.stroke); if (s) v.stroke = s;
     }
     const t = xcolorToHex(node.text); if (t) v.text = t;
-    if (v.shape === 'rect' || v.shape === 'rrect' || v.shape === 'diamond' || node.style === 'header') {
+    if (v.shape === 'rect' || v.shape === 'rrect' || v.shape === 'diamond' || node.style === 'header' || node.style === 'title') {
       v.rx = autoHalfWidth(node.label, v.rx);
     }
     return v;
@@ -201,7 +201,9 @@ export function createCanvas(host, cbs) {
     // Flowchart boxes carry prose ("No antibiotics") → upright; DAG nodes carry
     // math vars ($A$) → italic. Mirrors svg.mjs renderNode.
     const fontStyle = UPRIGHT_STYLES.has(n.style) ? 'normal' : 'italic';
-    const label = `<text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" font-style="${fontStyle}" font-size="19" fill="${v.text}" style="pointer-events:none">${tex2disp(formatNodeLabel(n, swigStyle))}</text>`;
+    const deco = (v.weight ? ` font-weight="${v.weight}"` : '')
+      + (v.underline ? ' text-decoration="underline"' : '');
+    const label = `<text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" font-style="${fontStyle}"${deco} font-size="${v.size || 19}" fill="${v.text}" style="pointer-events:none">${tex2disp(formatNodeLabel(n, swigStyle))}</text>`;
     return `<g class="dg-node" data-id="${n.id}">${shape}${hit}${label}</g>`;
   }
 

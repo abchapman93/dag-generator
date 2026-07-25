@@ -92,7 +92,10 @@ export const FLOW = {
   // Column header — names the variable a column of nodes splits on. Draws no
   // box (it labels the column, it is not a step in the tree) and sits muted so
   // it reads as scaffolding rather than as another decision.
-  header: { shape: 'none', text: '#4b5563', rx: 8, ry: 14 },
+  header: { shape: 'none', text: '#4b5563', rx: 8, ry: 14, weight: 'bold', underline: true },
+  // Panel title — names a whole subpanel, so it outranks a column header:
+  // larger and darker, but NOT underlined (the rule is what marks a column).
+  title: { shape: 'none', text: '#1a1c22', rx: 8, ry: 16, weight: 'bold', size: 23 },
 };
 
 // Auto-size a box's half-width to its label. The engine is headless (no DOM to
@@ -152,7 +155,7 @@ function visual(node, mode) {
   // A header draws no box, but its text is still its footprint, so it sizes to
   // the label like the boxed styles do — otherwise a long header on an edge
   // column falls outside the viewBox and clips.
-  if (v.shape === 'rect' || v.shape === 'rrect' || v.shape === 'diamond' || node.style === 'header') {
+  if (v.shape === 'rect' || v.shape === 'rrect' || v.shape === 'diamond' || node.style === 'header' || node.style === 'title') {
     v.rx = autoHalfWidth(node.label, v.rx);
   }
   return v;
@@ -189,12 +192,14 @@ function mixHex(c1, c2, t) {
 // Flowchart-family boxes carry prose labels ("No antibiotics"), so they render
 // upright; DAG nodes carry math variables ($A$), so they stay italic. Exported so
 // the live canvas (canvas.mjs) styles labels identically.
-export const UPRIGHT_STYLES = new Set(['decision', 'leaf', 'leafPos', 'leafNeg', 'header']);
+export const UPRIGHT_STYLES = new Set(['decision', 'leaf', 'leafPos', 'leafNeg', 'header', 'title']);
 
 function renderNode(node, p, mode, swigStyle) {
   const v = visual(node, mode);
   const fontStyle = UPRIGHT_STYLES.has(node.style) ? 'normal' : 'italic';
-  const label = `<text x="${round(p.x)}" y="${round(p.y)}" text-anchor="middle" dominant-baseline="central" font-style="${fontStyle}" font-size="19" fill="${v.text}">${tex2disp(formatNodeLabel(node, swigStyle))}</text>`;
+  const deco = (v.weight ? ` font-weight="${v.weight}"` : '')
+    + (v.underline ? ' text-decoration="underline"' : '');
+  const label = `<text x="${round(p.x)}" y="${round(p.y)}" text-anchor="middle" dominant-baseline="central" font-style="${fontStyle}"${deco} font-size="${v.size || 19}" fill="${v.text}">${tex2disp(formatNodeLabel(node, swigStyle))}</text>`;
   let shape = '';
   const sw = 1.6;
   const dash = v.dashed ? ' stroke-dasharray="5 4"' : '';
