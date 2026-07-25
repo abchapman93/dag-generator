@@ -9,7 +9,7 @@
 // intervene(m, ['A', 'V0']) produce $H_1(a, v_0)$ rather than two passes of
 // generic superscripts). Reproduces the grammar of swig-template.tex.
 
-import { cloneModel, descendantsOf, childrenOf } from './model.mjs';
+import { cloneModel, descendantsOf, childrenOf, FLOW_STYLES } from './model.mjs';
 
 // Grid-unit gap left for a fixed-value node when splitting a treatment (tight,
 // centered split; see \splitbar in tikz/dag-styles.tex). A flat constant
@@ -109,6 +109,13 @@ function appendArgs(label, args) {
 // always the canonical paren form ($Y(\cfarg{a})$); 'superscript' style reformats
 // the trailing argument list into $Y^{\cfarg{a}}$ instead. Labels with no argument
 // list (most nodes, and the plain `$a$` fixed-value nodes) pass through unchanged.
+// Node-aware wrapper: flowchart nodes carry prose, so their labels are never
+// reinterpreted as potential outcomes. Use this wherever a NODE is rendered or
+// emitted; call formatSwigLabel directly only when there is no node in hand.
+export function formatNodeLabel(node, style) {
+  return FLOW_STYLES.includes(node.style) ? node.label : formatSwigLabel(node.label, style);
+}
+
 export function formatSwigLabel(label, style) {
   if (style !== 'superscript') return label;
   const inner = String(label).replace(/^\$/, '').replace(/\$$/, '');

@@ -4,7 +4,7 @@
 // getScreenCTM so hit-testing is correct at any display scale.
 
 import { tex2disp, xcolorToHex, FLOW, UPRIGHT_STYLES, autoHalfWidth } from '/engine/svg.mjs';
-import { formatSwigLabel } from '/engine/swig.mjs';
+import { formatNodeLabel } from '/engine/swig.mjs';
 
 const CELL = 74;
 const MARGIN = 1.2;
@@ -92,7 +92,7 @@ export function createCanvas(host, cbs) {
       const s = xcolorToHex(node.stroke); if (s) v.stroke = s;
     }
     const t = xcolorToHex(node.text); if (t) v.text = t;
-    if (v.shape === 'rect' || v.shape === 'rrect' || v.shape === 'diamond') {
+    if (v.shape === 'rect' || v.shape === 'rrect' || v.shape === 'diamond' || node.style === 'header') {
       v.rx = autoHalfWidth(node.label, v.rx);
     }
     return v;
@@ -201,7 +201,7 @@ export function createCanvas(host, cbs) {
     // Flowchart boxes carry prose ("No antibiotics") → upright; DAG nodes carry
     // math vars ($A$) → italic. Mirrors svg.mjs renderNode.
     const fontStyle = UPRIGHT_STYLES.has(n.style) ? 'normal' : 'italic';
-    const label = `<text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" font-style="${fontStyle}" font-size="19" fill="${v.text}" style="pointer-events:none">${tex2disp(formatSwigLabel(n.label, swigStyle))}</text>`;
+    const label = `<text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" font-style="${fontStyle}" font-size="19" fill="${v.text}" style="pointer-events:none">${tex2disp(formatNodeLabel(n, swigStyle))}</text>`;
     return `<g class="dg-node" data-id="${n.id}">${shape}${hit}${label}</g>`;
   }
 

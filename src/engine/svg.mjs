@@ -6,7 +6,7 @@
 // Pure string builder — no DOM. Used for SVG/HTML/PNG export and to seed the app
 // canvas. Interactivity (drag) lives in the frontend, not here.
 
-import { formatSwigLabel } from './swig.mjs';
+import { formatNodeLabel } from './swig.mjs';
 
 const CELL = 70; // px per grid unit
 const PAD = 46;
@@ -89,6 +89,10 @@ export const FLOW = {
   leaf: { shape: 'rrect', fill: '#f3f4f6', stroke: '#6b7280', text: '#1a1c22', rx: 34, ry: 22 },
   leafPos: { shape: 'rrect', fill: '#dcf5e3', stroke: '#3a9d5d', text: '#14532d', rx: 34, ry: 22 },
   leafNeg: { shape: 'rrect', fill: '#fbdcdc', stroke: '#c0392b', text: '#7f1d1d', rx: 34, ry: 22 },
+  // Column header — names the variable a column of nodes splits on. Draws no
+  // box (it labels the column, it is not a step in the tree) and sits muted so
+  // it reads as scaffolding rather than as another decision.
+  header: { shape: 'none', text: '#4b5563', rx: 8, ry: 14 },
 };
 
 // Auto-size a box's half-width to its label. The engine is headless (no DOM to
@@ -145,7 +149,10 @@ function visual(node, mode) {
     const s = xcolorToHex(node.stroke); if (s) v.stroke = s;
   }
   const t = xcolorToHex(node.text); if (t) v.text = t;
-  if (v.shape === 'rect' || v.shape === 'rrect' || v.shape === 'diamond') {
+  // A header draws no box, but its text is still its footprint, so it sizes to
+  // the label like the boxed styles do — otherwise a long header on an edge
+  // column falls outside the viewBox and clips.
+  if (v.shape === 'rect' || v.shape === 'rrect' || v.shape === 'diamond' || node.style === 'header') {
     v.rx = autoHalfWidth(node.label, v.rx);
   }
   return v;
@@ -182,12 +189,12 @@ function mixHex(c1, c2, t) {
 // Flowchart-family boxes carry prose labels ("No antibiotics"), so they render
 // upright; DAG nodes carry math variables ($A$), so they stay italic. Exported so
 // the live canvas (canvas.mjs) styles labels identically.
-export const UPRIGHT_STYLES = new Set(['decision', 'leaf', 'leafPos', 'leafNeg']);
+export const UPRIGHT_STYLES = new Set(['decision', 'leaf', 'leafPos', 'leafNeg', 'header']);
 
 function renderNode(node, p, mode, swigStyle) {
   const v = visual(node, mode);
   const fontStyle = UPRIGHT_STYLES.has(node.style) ? 'normal' : 'italic';
-  const label = `<text x="${round(p.x)}" y="${round(p.y)}" text-anchor="middle" dominant-baseline="central" font-style="${fontStyle}" font-size="19" fill="${v.text}">${tex2disp(formatSwigLabel(node.label, swigStyle))}</text>`;
+  const label = `<text x="${round(p.x)}" y="${round(p.y)}" text-anchor="middle" dominant-baseline="central" font-style="${fontStyle}" font-size="19" fill="${v.text}">${tex2disp(formatNodeLabel(node, swigStyle))}</text>`;
   let shape = '';
   const sw = 1.6;
   const dash = v.dashed ? ' stroke-dasharray="5 4"' : '';

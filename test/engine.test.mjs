@@ -283,6 +283,49 @@ describe('decision-tree grammar (edge labels + flowchart node styling)', () => {
     expect(wide).toBeGreaterThan(narrow);
   });
 
+  it('header nodes draw no box, sit upright, and round-trip through TikZ', () => {
+    const m = emptyModel({
+      nodes: [
+        { id: 'h', x: 0, y: 1, label: 'Recommendation', style: 'header' },
+        { id: 'd', x: 0, y: 0, label: 'Mild', style: 'decision' },
+      ],
+    });
+    const svg = toSVG(m, { style: 'informal' });
+    // the decision node is boxed; the header is text only
+    expect([...svg.matchAll(/<rect x="-?[\d.]/g)]).toHaveLength(1);
+    expect(svg).toMatch(/font-style="normal"[^>]*>Recommendation</);
+
+    // a header still sizes to its label, so a long one can't fall outside the viewBox
+    const W = Number(svg.match(/viewBox="0 0 ([\d.]+) /)[1]);
+    const hx = Number(svg.match(/<text x="([\d.]+)"[^>]*>Recommendation</)[1]);
+    expect(autoHalfWidth('Recommendation', 8)).toBeGreaterThan(8);
+    expect(hx + autoHalfWidth('Recommendation', 8)).toBeLessThanOrEqual(W);
+
+    // style survives emit -> parse (it is in the canonical grammar, not a fake)
+    const back = tikz.parse(tikz.emit(m)).model;
+    expect(back.nodes.find((n) => n.id === 'h').style).toBe('header');
+  });
+
+  it('flowchart labels are prose — SWIG superscripting never rewrites them', () => {
+    // "ATS 2025 (published guideline)" ends in a parenthetical, which the SWIG
+    // formatter would otherwise read as a potential-outcome argument list and
+    // raise into an exponent, eating the parentheses.
+    const title = 'ATS 2025 (published guideline)';
+    const m = emptyModel({
+      nodes: [
+        { id: 'h', x: 0, y: 0, label: title, style: 'header' },
+        { id: 'v', x: 3, y: 0, label: '$Y(a)$', style: 'rv' },
+      ],
+    });
+    const svg = toSVG(m, { style: 'informal', swigStyle: 'superscript' });
+    expect(svg).toContain('ATS 2025 (published guideline)');
+    expect(svg).not.toMatch(/ATS 2025\s*<tspan[^>]*baseline-shift/);
+    // the genuine potential-outcome node is still superscripted
+    expect(svg).toMatch(/baseline-shift='super'/);
+    // and the same rule holds on the TikZ emit path, not just SVG
+    expect(tikz.emit(m)).toContain(`{${title}}`);
+  });
+
   it('viewBox contains auto-sized boxes at the edges of the grid', () => {
     // An auto-sized box on the first/last column is wider than PAD, so the
     // viewBox has to grow past the grid extents or the label gets clipped on

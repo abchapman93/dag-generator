@@ -13,7 +13,7 @@
 // Recognised preamble/wrapper lines are ignored; everything else is flagged.
 
 import { emptyModel, defaultLabel, NODE_STYLES, EDGE_STYLES } from './model.mjs';
-import { formatSwigLabel } from './swig.mjs';
+import { formatNodeLabel } from './swig.mjs';
 
 // Inlined named-style block (mirror of tikz/dag-styles.tex) so standalone output
 // compiles with no external \input.
@@ -28,6 +28,7 @@ export const STYLE_BLOCK = `\\usetikzlibrary{positioning, arrows.meta, fit, back
   leaf/.style     = {draw=gray!60!black, fill=gray!8, rounded corners=3pt, inner sep=3.5pt, minimum size=7mm},
   leafPos/.style  = {draw=green!55!black, fill=green!12, rounded corners=3pt, inner sep=3.5pt, minimum size=7mm},
   leafNeg/.style  = {draw=red!60!black, fill=red!10, rounded corners=3pt, inner sep=3.5pt, minimum size=7mm},
+  header/.style   = {font=\\bfseries\\small, text=black!65, inner sep=2pt},
   causal/.style = {-Latex},
   det/.style    = {-Latex, double, double distance=1pt},
   reads/.style  = {-Latex, orange, dashed},
@@ -54,7 +55,7 @@ export function emit(model, opts = {}) {
     if (n.fill) sty.push(`fill=${n.fill}`);
     if (n.stroke) sty.push(`draw=${n.stroke}`);
     if (n.text) sty.push(`text=${n.text}`);
-    body.push(`  \\node[${sty.join(', ')}](${n.id}) at (${fmt(n.x)},${fmt(n.y)}) {${formatSwigLabel(n.label, swigStyle)}};`);
+    body.push(`  \\node[${sty.join(', ')}](${n.id}) at (${fmt(n.x)},${fmt(n.y)}) {${formatNodeLabel(n, swigStyle)}};`);
   }
   if (model.swig?.interventions) {
     for (const iv of model.swig.interventions) body.push(`  \\splitbar{${iv.node}}{${iv.regimeLabel}};`);

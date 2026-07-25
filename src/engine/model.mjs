@@ -23,7 +23,14 @@
 // annotation (branch condition on a decision tree); `edge.labelPos` is its TikZ
 // node placement (e.g. `above`), preserved verbatim.
 
-export const NODE_STYLES = ['rv', 'cond', 'unobs', 'regime', 'fixed', 'decision', 'leaf', 'leafPos', 'leafNeg'];
+export const NODE_STYLES = ['rv', 'cond', 'unobs', 'regime', 'fixed', 'decision', 'leaf', 'leafPos', 'leafNeg', 'header'];
+
+// The flowchart family. These carry PROSE ("ATS 2025 (published guideline)"),
+// not potential-outcome variables, which is why they render upright and why
+// SWIG superscripting must skip them — otherwise a trailing parenthetical is
+// eaten and raised into an exponent. One list, so the render/emit/canvas paths
+// can't disagree about which styles are prose.
+export const FLOW_STYLES = ['decision', 'leaf', 'leafPos', 'leafNeg', 'header'];
 export const EDGE_STYLES = ['causal', 'reads', 'cfedge', 'det', 'biasing', 'blocked', 'bidirected'];
 export const ROLES = ['exposure', 'outcome', 'confounder', 'mediator', 'collider', 'instrument', 'covariate', 'latent'];
 export const KINDS = ['dag', 'swig'];
