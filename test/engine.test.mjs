@@ -283,6 +283,36 @@ describe('decision-tree grammar (edge labels + flowchart node styling)', () => {
     expect(wide).toBeGreaterThan(narrow);
   });
 
+  it('viewBox contains auto-sized boxes at the edges of the grid', () => {
+    // An auto-sized box on the first/last column is wider than PAD, so the
+    // viewBox has to grow past the grid extents or the label gets clipped on
+    // export (the ATS/IDSA decision trees hit this on both sides).
+    const m = emptyModel({
+      nodes: [
+        { id: 'root', x: 0, y: 0, label: 'Pneumonia', style: 'decision' },
+        { id: 'leaf', x: 4, y: 0, label: 'No antibiotics', style: 'leafNeg' },
+      ],
+    });
+    const svg = toSVG(m, { style: 'informal' });
+    const W = Number(svg.match(/viewBox="0 0 ([\d.]+) /)[1]);
+    for (const r of svg.matchAll(/<rect x="(-?[\d.]+)" y="[^"]*" width="([\d.]+)"/g)) {
+      const x = Number(r[1]), w = Number(r[2]);
+      if (w === 0) continue; // the background <rect width="100%">
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x + w).toBeLessThanOrEqual(W);
+    }
+
+    // ...and a DAG whose boxes all fit inside PAD keeps the plain grid bounds,
+    // so existing renders are byte-identical (grow-only, like autoHalfWidth).
+    const plain = emptyModel({
+      nodes: [
+        { id: 'A', x: 0, y: 0, label: '$A$', style: 'rv' },
+        { id: 'Y', x: 2, y: 0, label: '$Y$', style: 'rv' },
+      ],
+    });
+    expect(toSVG(plain)).toContain('viewBox="0 0 232 92"'); // 2*70 grid + 2*46 PAD
+  });
+
   it('renders flowchart labels upright and DAG labels italic', () => {
     const m = emptyModel({
       nodes: [

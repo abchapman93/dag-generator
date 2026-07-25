@@ -32,10 +32,26 @@ export function toSVG(model, opts = {}) {
   const nodes = model.nodes;
 
   const ext = extents(nodes);
-  const W = (ext.maxx - ext.minx) * cell + PAD * 2;
-  const H = (ext.maxy - ext.miny) * cell + PAD * 2;
-  const px = (x) => PAD + (x - ext.minx) * cell;
-  const py = (y) => PAD + (ext.maxy - y) * cell; // y up
+  const gridW = (ext.maxx - ext.minx) * cell, gridH = (ext.maxy - ext.miny) * cell;
+  // Grid extents locate node CENTRES, and PAD assumes a box fits within it —
+  // but autoHalfWidth can grow a box wider than PAD to fit a long label, and it
+  // then hangs outside the viewBox and is clipped on export ("No antibiotics"
+  // in a decision tree, on both sides). Grow the canvas by exactly the overflow,
+  // mirroring autoHalfWidth's grow-only rule: a DAG whose boxes fit inside PAD
+  // is untouched and renders byte-identically.
+  let overL = 0, overR = 0, overT = 0, overB = 0;
+  for (const n of nodes) {
+    const v = visual(n, mode);
+    const cx = (n.x - ext.minx) * cell, cy = (ext.maxy - n.y) * cell;
+    overL = Math.max(overL, (v.rx || 0) - cx - PAD);
+    overR = Math.max(overR, cx + (v.rx || 0) - gridW - PAD);
+    overT = Math.max(overT, (v.ry || 0) - cy - PAD);
+    overB = Math.max(overB, cy + (v.ry || 0) - gridH - PAD);
+  }
+  const W = gridW + PAD * 2 + overL + overR;
+  const H = gridH + PAD * 2 + overT + overB;
+  const px = (x) => PAD + overL + (x - ext.minx) * cell;
+  const py = (y) => PAD + overT + (ext.maxy - y) * cell; // y up
   const pos = {};
   nodes.forEach((n) => (pos[n.id] = { x: px(n.x), y: py(n.y) }));
 
