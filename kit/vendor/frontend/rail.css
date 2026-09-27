@@ -1,0 +1,65 @@
+/* Rail chrome (kit/frontend/rail.mjs). Geometry only — the surface keeps its
+   own border, background and inner layout; this file owns width, the fold and
+   the grip, which is the part every surface had been re-deciding.
+
+   Themeable through the same --ck-* variables as the ask cards. */
+
+.ck-rail{
+  position:relative;                 /* the grip sits on the outer edge */
+  flex:0 0 var(--ck-rail-w, 340px); width:var(--ck-rail-w, 340px); min-width:0;
+  transition:flex-basis .14s ease, width .14s ease;
+}
+
+/* ---------------- the grip ---------------- */
+/* Sits ON the seam, half in and half out, so the whole border is grabbable
+   without stealing a visible strip from either pane. */
+.ck-rail-grip{
+  position:absolute; top:0; bottom:0; left:-3px; width:7px; z-index:2;
+  cursor:col-resize;
+}
+.ck-rail-grip:hover::after,
+.ck-rail-grip:focus-visible::after,
+.ck-rail-grip.is-dragging::after{
+  content:''; position:absolute; inset:0 3px; background:var(--ck-accent,#2f7d5a);
+}
+.ck-rail-grip:focus-visible{ outline:none; }
+.ck-rail.is-collapsed .ck-rail-grip{ cursor:e-resize; }
+/* A drag whose pointer crosses the surface's prose must not leave a blue smear
+   behind — that reads as a failed interaction. The transition goes with it, so
+   the rail tracks the cursor instead of easing after it. */
+body:has(.ck-rail-grip.is-dragging){ user-select:none; }
+body:has(.ck-rail-grip.is-dragging) .ck-rail{ transition:none; }
+
+/* ---------------- chrome ---------------- */
+
+.ck-rail-head{
+  display:flex; align-items:center; justify-content:flex-end; gap:6px;
+  padding:4px 6px 0;
+}
+.ck-rail-btn{
+  font:inherit; font-size:12px; line-height:1; cursor:pointer;
+  border:1px solid transparent; border-radius:6px; background:none;
+  padding:3px 6px; color:var(--ck-ink,#24292f); opacity:.6;
+}
+.ck-rail-btn:hover{ opacity:1; border-color:var(--ck-line,#e1e4e8); }
+.ck-rail-badge{
+  font-size:11px; font-weight:700; line-height:1; padding:2px 6px;
+  border-radius:999px; background:var(--ck-accent,#2f7d5a); color:#fff;
+}
+.ck-rail-badge[hidden]{ display:none; }
+
+/* ---------------- folded ---------------- */
+/* Folded, the rail keeps a strip: the expand button, the pending-card count and
+   the surface's name turned on its side. A collapse that hid the badge would
+   make the session's cards silent, which is the one thing this control must
+   never do. */
+.ck-rail-strip{ display:none; }
+.ck-rail.is-collapsed > :not(.ck-rail-grip):not(.ck-rail-strip){ display:none; }
+.ck-rail.is-collapsed > .ck-rail-strip{
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  padding:6px 0; overflow:hidden;
+}
+.ck-rail-label{
+  writing-mode:vertical-rl; font-size:11px; text-transform:uppercase;
+  letter-spacing:.06em; font-weight:700; color:var(--ck-ink,#24292f); opacity:.45;
+}

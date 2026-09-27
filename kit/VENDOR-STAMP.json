@@ -1,0 +1,19 @@
+{
+  "source": "/Users/alecchapman/Code/collab-lab/kit",
+  "commit": "45e0a53ac3374742101b87a6cc87e9ca23b97b0a",
+  "synced_at": "2026-09-27T21:21:33.635Z",
+  "mode": "manifest",
+  "files": [
+    "asks.mjs",
+    "server/signals.mjs",
+    "server/outbound.mjs",
+    "server/channels.mjs",
+    "server/doc.mjs",
+    "frontend/ask-cards.mjs",
+    "frontend/ask-cards.css",
+    "frontend/rail.mjs",
+    "frontend/rail.css",
+    "frontend/channel-picker.mjs",
+    "frontend/channel-picker.css"
+  ]
+}

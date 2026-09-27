@@ -5,6 +5,7 @@ import { defineConfig } from 'vitest/config';
 // time and `npm test` reports roughly double the real count.
 export default defineConfig({
   test: {
-    exclude: ['**/node_modules/**', '**/dist/**', '.claude/**'],
+    // kit/ holds the vendored collab kit; its drift test is node:test, run by `npm test`.
+    exclude: ['**/node_modules/**', '**/dist/**', '.claude/**', 'kit/**'],
   },
 });

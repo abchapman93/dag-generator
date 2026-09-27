@@ -1,0 +1,28 @@
+/* Channel picker — chip + dropdown. Theme through the same --ck-* variables as
+   ask-cards.css; every rule has a fallback so it renders sanely unthemed.
+
+   The broadcast (unchanneled) chip is deliberately muted and dashed: legacy
+   mode must be visible at a glance, never mistaken for an attached channel. */
+
+.ck-chan{position:relative;display:inline-block;font-size:12.5px}
+.ck-chan-chip{font:inherit;font-size:12.5px;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--ck-accent,#2f7d5a);border-radius:999px;background:var(--ck-accent-weak,#eaf5ef);color:var(--ck-accent-ink,#1d5c40);cursor:pointer;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ck-chan-chip:hover{filter:brightness(.97)}
+.ck-chan-dot{width:7px;height:7px;border-radius:50%;background:var(--ck-accent,#2f7d5a);flex:none}
+.ck-chan-broadcast{border-style:dashed;border-color:var(--ck-line,#bbb);background:transparent;color:var(--ck-muted,#777)}
+.ck-chan-broadcast .ck-chan-dot{background:var(--ck-muted,#999)}
+.ck-chan-pending{background:var(--ck-accent,#2f7d5a);color:#fff;border-radius:999px;padding:0 6px;font-size:11px;line-height:16px}
+
+.ck-chan-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:40;min-width:240px;max-width:320px;background:#fff;border:1px solid var(--ck-line,#ddd);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.12);padding:4px;max-height:320px;overflow:auto}
+.ck-chan-row{font:inherit;font-size:12.5px;display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:7px 9px;border:0;border-radius:7px;background:none;cursor:pointer;color:var(--ck-ink,#222)}
+.ck-chan-row:hover{background:var(--ck-accent-weak,#eaf5ef)}
+.ck-chan-on{background:var(--ck-accent-weak,#eaf5ef)}
+.ck-chan-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.ck-chan-name-broadcast{font-weight:400;color:var(--ck-muted,#777)}
+.ck-chan-meta{flex:none;color:var(--ck-muted,#999);font-size:11px}
+.ck-chan-arch{flex:none;font-size:11px;color:var(--ck-muted,#999);text-decoration:underline}
+.ck-chan-arch:hover{color:var(--ck-del-ink,#8a2a35)}
+
+.ck-chan-new{display:flex;gap:5px;padding:6px;border-top:1px solid var(--ck-line,#eee);margin-top:2px}
+.ck-chan-input{flex:1;min-width:0;font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--ck-line,#ddd);border-radius:7px}
+.ck-chan-create{font:inherit;font-size:12.5px;border:1px solid var(--ck-accent,#2f7d5a);background:var(--ck-accent,#2f7d5a);color:#fff;border-radius:7px;padding:5px 10px;cursor:pointer}
+.ck-chan-create:hover{filter:brightness(.95)}

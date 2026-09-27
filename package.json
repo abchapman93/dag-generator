@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "node src/server/index.mjs",
-    "test": "vitest run",
+    "test": "vitest run && node --test kit/kit-drift.test.mjs",
+    "sync-kit": "node kit/sync-vendor.mjs",
     "test:watch": "vitest"
   },
   "engines": {

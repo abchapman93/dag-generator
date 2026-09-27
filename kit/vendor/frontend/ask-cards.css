@@ -1,0 +1,80 @@
+/* Ask cards — shared styles for the return channel, generalized from dag-generator's
+   dg.css. Theme through the --ck-* variables; every rule has a fallback so the cards
+   render sanely with no theming at all.
+
+   The host app owns the panel geometry: widen the containing panel while any ask is
+   open (dag-generator: 340 → 480px, toggled off onOpenChange) so option previews
+   have room — that preview is what makes an ask worth asking. */
+
+.ck-asks{border-top:2px solid var(--ck-accent,#2f7d5a);background:var(--ck-accent-weak,#eaf5ef);padding:10px 12px;max-height:52%;overflow:auto}
+.ck-ask{position:relative}
+.ck-ask+.ck-ask{margin-top:10px;padding-top:10px;border-top:1px solid var(--ck-accent-line,#cfe6da)}
+/* The prompt is markdown, rendered by the kit (withRichText) — so it is a block
+   container, not a <p>, and pre-wrap is gone with it: paragraphs, list items and
+   the author's own single line breaks are real elements now. Newlines are still
+   content (outbound.py stopped flattening the prompt on 2026-07-28); they just
+   survive as <br> instead of as whitespace.
+
+   Normal weight, not 600: when everything is semibold, `**this**` says nothing.
+   The prompt earns its emphasis from the markup now, and a card carrying a
+   paragraph of coaching reads as prose rather than as one long label. */
+.ck-ask-q{margin:0 0 8px;padding-right:20px;font-size:13px;color:var(--ck-accent-ink,#1d5c40)}
+.ck-ask-q p{margin:0 0 6px}
+.ck-ask-q h3,.ck-ask-q h4,.ck-ask-q h5,.ck-ask-q h6{margin:8px 0 4px;font-size:13px;font-weight:650}
+.ck-ask-q ul,.ck-ask-q ol{margin:0 0 6px;padding-left:18px}
+.ck-ask-q li{margin:2px 0}
+.ck-ask-q strong{font-weight:650}
+.ck-ask-q>:last-child{margin-bottom:0}
+.ck-ask-q code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:#fff;border:1px solid var(--ck-line,#ddd);border-radius:4px;padding:0 3px}
+/* A code block scrolls rather than widening the card, same as display math. */
+.ck-ask-q pre{margin:0 0 6px;padding:6px 8px;background:#fff;border:1px solid var(--ck-line,#ddd);border-radius:6px;overflow-x:auto}
+.ck-ask-q pre code{padding:0;border:0;background:none}
+
+/* Dismiss — clear the card, answer nothing. The quietest control on the card by
+   some distance, and deliberately: it is the only one that ends a card without
+   telling the session anything, so it must never be the obvious way to finish
+   with one. It reserves its corner (see .ck-ask-q's padding-right) rather than
+   floating over the prompt's first line. */
+.ck-ask-dismiss{position:absolute;top:0;right:0;width:18px;height:18px;padding:0;line-height:16px;text-align:center;font:inherit;font-size:11px;border:1px solid transparent;border-radius:5px;background:none;color:var(--ck-faint,#8a9a92);cursor:pointer}
+.ck-ask-dismiss:hover{border-color:var(--ck-line,#ddd);background:#fff;color:var(--ck-ink,#222)}
+.ck-ask+.ck-ask .ck-ask-dismiss{top:10px}
+/* Two fixed columns, not wrapping flex: a lone option on the last row keeps its
+   column width instead of stretching to fill the row (3 options read 217/217/217,
+   not 217/217/440). Two columns is safe whenever this is visible — the host panel
+   widens while an ask is open. */
+.ck-ask-opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:8px}
+.ck-ask-opt{min-width:0;font:inherit;font-size:12.5px;background:#fff;border:1px solid var(--ck-line,#ddd);border-radius:8px;padding:6px;cursor:pointer;color:var(--ck-ink,#222);display:flex;flex-direction:column;align-items:center;gap:5px}
+.ck-ask-opt:hover{border-color:var(--ck-accent,#2f7d5a);color:var(--ck-accent-ink,#1d5c40)}
+.ck-ask-opt img{width:100%;height:auto;max-height:120px;object-fit:contain;border-radius:5px;background:#fff}
+/* A one-line label renders as bare inline markup; only a label that grew blocks
+   brings margins into the button. */
+.ck-ask-opt p{margin:0}
+.ck-ask-free{display:flex;gap:5px}
+.ck-ask-text{flex:1;min-width:0;font:inherit;font-size:12.5px;padding:6px 8px;border:1px solid var(--ck-line,#ddd);border-radius:7px;color:var(--ck-ink,#222);background:#fff}
+.ck-ask-send{font:inherit;font-size:12.5px;border:1px solid var(--ck-accent,#2f7d5a);background:var(--ck-accent,#2f7d5a);color:#fff;border-radius:7px;padding:6px 12px;cursor:pointer}
+.ck-ask-send:hover{filter:brightness(.95)}
+
+/* Math segments (typeset by the host's renderMath). The kit knows nothing about the
+   renderer's own class names, so it wraps every result in .ck-math and styles that.
+   A display block scrolls rather than widening the card: a long derivation line would
+   otherwise push the panel's layout out from under the option grid. */
+.ck-math-display{display:block;overflow-x:auto;overflow-y:hidden;max-width:100%;margin:6px 0}
+.ck-ask-opt .ck-math-display{margin:2px 0}
+
+/* Suggestion payloads (rendered by the host's renderPayload): a before/after diff.
+   pre-wrap keeps the proposed text's own line structure visible. */
+.ck-diff{margin:0 0 8px;font-size:12.5px;border:1px solid var(--ck-line,#ddd);border-radius:8px;overflow:hidden}
+.ck-diff del,.ck-diff ins{display:block;padding:6px 8px;text-decoration:none;white-space:pre-wrap;word-break:break-word}
+.ck-diff del{background:var(--ck-del-bg,#fdeef0);color:var(--ck-del-ink,#8a2a35)}
+.ck-diff ins{background:var(--ck-ins-bg,#e9f6ee);color:var(--ck-ins-ink,#1d5c40);border-top:1px solid var(--ck-line,#ddd)}
+/* Inline variant (diffWordsHtml): one run of text, deletions struck through,
+   insertions tinted — tracked changes rather than two blocks. */
+.ck-diff-inline{padding:6px 8px;background:#fff;white-space:pre-wrap;word-break:break-word}
+.ck-diff-inline del,.ck-diff-inline ins{display:inline;padding:0 1px;border:0;border-radius:2px}
+.ck-diff-inline del{text-decoration:line-through;text-decoration-color:var(--ck-del-ink,#8a2a35)}
+
+/* Comment — talking about a card without resolving it. Deliberately quieter
+   than send: send IS the answer, comment is a remark beside one, and it must
+   not read as the way to finish with the card. */
+.ck-ask-comment{font:inherit;font-size:12.5px;padding:6px 10px;border:1px solid var(--ck-line,#ddd);border-radius:7px;background:#fff;color:var(--ck-accent-ink,#1d5c3a);cursor:pointer}
+.ck-ask-comment:hover{border-color:var(--ck-accent,#2f7d5a)}
