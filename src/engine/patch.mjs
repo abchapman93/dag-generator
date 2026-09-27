@@ -151,8 +151,11 @@ export function applyPatch(model, ops) {
 }
 
 // Put each unplaced node on the free integer grid cell nearest the mean of its
-// placed neighbours (or right of the graph when it has none). Deterministic, so
-// a card's preview and the accepted result agree.
+// placed neighbours (or right of the graph when it has none). A cell is not free
+// if a node sits there or a straight edge between placed nodes runs through it —
+// the mean of two neighbours is often exactly on the edge joining them, and a
+// node drawn there hides that edge. Deterministic, so a card's preview and the
+// accepted result agree.
 export function placeNodes(model, ids) {
   const byId = new Map(model.nodes.map((n) => [n.id, n]));
   const placed = new Set(model.nodes.filter((n) => !ids.has(n.id)).map((n) => n.id));
@@ -168,7 +171,11 @@ export function placeNodes(model, ids) {
       .map((n) => byId.get(n));
     const tx = nbrs.length ? Math.round(nbrs.reduce((s, n) => s + n.x, 0) / nbrs.length) : maxX + 1;
     const ty = nbrs.length ? Math.round(nbrs.reduce((s, n) => s + n.y, 0) / nbrs.length) : 0;
-    const [x, y] = nearestFree(tx, ty, taken);
+    const segs = model.edges
+      .filter((e) => !e.bend && placed.has(e.from) && placed.has(e.to))
+      .map((e) => [byId.get(e.from), byId.get(e.to)]);
+    const blocked = (x, y) => taken.has(`${x},${y}`) || segs.some(([a, b]) => onSegment(a, b, x, y));
+    const [x, y] = nearestFree(tx, ty, blocked);
     node.x = x; node.y = y;
     taken.add(`${x},${y}`);
     placed.add(id);
@@ -176,7 +183,14 @@ export function placeNodes(model, ids) {
   return model;
 }
 
-function nearestFree(tx, ty, taken) {
+// Strictly between a and b on the straight line joining them.
+function onSegment(a, b, x, y) {
+  if ((b.x - a.x) * (y - a.y) !== (b.y - a.y) * (x - a.x)) return false;
+  const t = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? (x - a.x) / (b.x - a.x) : (y - a.y) / (b.y - a.y);
+  return t > 0 && t < 1;
+}
+
+function nearestFree(tx, ty, blocked) {
   for (let r = 0; r < 64; r++) {
     const ring = [];
     for (let dx = -r; dx <= r; dx++) {
@@ -187,7 +201,7 @@ function nearestFree(tx, ty, taken) {
     // Nearest first; then prefer staying on the target's row, then to the right.
     ring.sort((p, q) => (Math.abs(p[0]) + Math.abs(p[1])) - (Math.abs(q[0]) + Math.abs(q[1]))
       || Math.abs(p[1]) - Math.abs(q[1]) || q[0] - p[0] || p[1] - q[1]);
-    for (const [dx, dy] of ring) if (!taken.has(`${tx + dx},${ty + dy}`)) return [tx + dx, ty + dy];
+    for (const [dx, dy] of ring) if (!blocked(tx + dx, ty + dy)) return [tx + dx, ty + dy];
   }
   return [tx, ty];
 }

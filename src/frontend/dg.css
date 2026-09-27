@@ -3,6 +3,9 @@
   --dg-blue:#2f6df6; --dg-orange:#e07a1f; --dg-warn:#c0392b;
   --dg-ink:#1a1c22; --dg-muted:#6b7280; --dg-line:#e2e5ea; --dg-bg:#f6f7f9;
   --dg-mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  /* the kit's cards, rail and channel chip, in this app's palette */
+  --ck-accent:var(--dg-accent); --ck-accent-weak:var(--dg-accent-weak); --ck-accent-ink:var(--dg-accent-ink);
+  --ck-line:var(--dg-line); --ck-ink:var(--dg-ink); --ck-muted:var(--dg-muted);
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -50,7 +53,7 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 .dg-cfg-item.on{background:var(--dg-accent-weak)}
 .dg-cfg-item:hover{background:var(--dg-bg)}
 .dg-cfg-open{flex:1;min-width:0;display:flex;justify-content:space-between;align-items:center;gap:8px;font:inherit;font-size:13px;text-align:left;border:0;background:none;border-radius:7px;padding:7px 9px;cursor:pointer;color:var(--dg-ink)}
-.dg-cfg-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dg-cfg-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dg-cfg-del{border:0;background:none;color:var(--dg-muted);cursor:pointer;padding:6px 9px;border-radius:7px;font-size:12px}
 .dg-cfg-del:hover{color:var(--dg-warn);background:#f8d7da55}
 .dg-body{flex:1;display:flex;min-height:0}
@@ -68,8 +71,7 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 .dg-zoom-label{font-size:11.5px;color:var(--dg-muted);min-width:40px;text-align:center;cursor:pointer;user-select:none}
 .dg-zoom-label:hover{color:var(--dg-accent-ink)}
 
-.dg-side{width:340px;flex-shrink:0;border-left:1px solid var(--dg-line);background:#fff;display:flex;flex-direction:column;min-height:0;transition:width .24s ease}
-.side-collapsed .dg-side{width:0;border-left:0;overflow:hidden}
+.dg-side{border-left:1px solid var(--dg-line);background:#fff;display:flex;flex-direction:column;min-height:0}   /* width, fold and grip: kit rail */
 .dg-side-tabs{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--dg-line)}
 .dg-tab{font:inherit;font-size:12.5px;border:0;background:none;padding:6px 12px;cursor:pointer;color:var(--dg-muted);border-radius:7px 7px 0 0}
 .dg-tab[aria-selected=true]{color:var(--dg-accent-ink);background:var(--dg-accent-weak);font-weight:600}
@@ -82,24 +84,29 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 .dg-status.warn{color:var(--dg-warn)}
 .dg-status.busy{color:var(--dg-orange)}
 
-/* Ask cards — the return channel. The panel widens while an ask is open so option
-   previews have room, then snaps back; .dg-side already carries the transition. */
-.asks-open .dg-side{width:480px}
-.dg-asks{border-top:2px solid var(--dg-accent);background:var(--dg-accent-weak);padding:10px 12px;max-height:52%;overflow:auto}
-.dg-ask+.dg-ask{margin-top:10px;padding-top:10px;border-top:1px solid #cfe6da}
-.dg-ask-q{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--dg-accent-ink)}
-/* Two fixed columns, not wrapping flex: a lone option on the last row keeps its
-   column width instead of stretching to fill the row (3 options read 217/217/217,
-   not 217/217/440). Two columns is safe at any time this is visible — the side
-   panel widens to 480px whenever an ask is open. */
-.dg-ask-opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:8px}
-.dg-ask-opt{min-width:0;font:inherit;font-size:12.5px;background:#fff;border:1px solid var(--dg-line);border-radius:8px;padding:6px;cursor:pointer;color:var(--dg-ink);display:flex;flex-direction:column;align-items:center;gap:5px}
-.dg-ask-opt:hover{border-color:var(--dg-accent);background:#fff;color:var(--dg-accent-ink)}
-.dg-ask-opt img{width:100%;height:auto;max-height:120px;object-fit:contain;border-radius:5px;background:#fff}
-.dg-ask-free{display:flex;gap:5px}
-.dg-ask-text{flex:1;min-width:0;font:inherit;font-size:12.5px;padding:6px 8px;border:1px solid var(--dg-line);border-radius:7px;color:var(--dg-ink);background:#fff}
-.dg-ask-send{font:inherit;font-size:12.5px;border:1px solid var(--dg-accent);background:var(--dg-accent);color:#fff;border-radius:7px;padding:6px 12px;cursor:pointer}
-.dg-ask-send:hover{filter:brightness(.95)}
+/* Ask cards come from the kit (ask-cards.css); what's here is this surface's
+   own card bodies: dag-patch ops + preview, and the point-back Show me. */
+.dg-patch{margin:0 0 8px}
+.dg-patch-why{margin:0 0 6px;font-size:12.5px;color:var(--dg-ink)}
+.dg-ops{list-style:none;margin:0 0 8px;padding:0;font-family:var(--dg-mono);font-size:12px}
+.dg-op{padding:2px 6px;border-radius:4px;margin-bottom:2px;background:#fff}
+.dg-op-add{color:#16613a}
+.dg-op-del{color:#8a2a35}
+.dg-op-set{color:var(--dg-blue)}
+.dg-patch-preview{display:block;width:100%;max-height:220px;object-fit:contain;background:#fff;border:1px solid var(--dg-line);border-radius:6px;margin-bottom:8px}
+.dg-patch-warn{margin:0 0 8px;font-size:12.5px;color:var(--dg-warn)}
+.dg-card-extra{margin:0 0 8px}
+/* Superseded, not hidden: the session may still mean it; it just lost authority. */
+.dg-stale{margin:0 0 6px;font-size:11.5px;font-weight:600;color:var(--dg-warn)}
+.ck-ask:has(.dg-stale) .ck-ask-q,.ck-ask:has(.dg-stale) .dg-ops,.ck-ask:has(.dg-stale) .dg-patch-preview,.ck-ask:has(.dg-stale) .ck-ask-opts{opacity:.5;filter:saturate(.35)}
+.dg-showme{font-size:12px;padding:3px 9px}
+.dg-badge{flex:none;display:inline-block;font-size:10.5px;font-weight:700;line-height:1;padding:2px 6px;margin-left:4px;border-radius:999px;background:#ece6f7;color:#5b3f99;vertical-align:1px}
+.dg-channel:empty{display:none}
+.dg-channel .ck-chan-menu{left:auto;right:0}   /* the chip sits at the toolbar's right end */
+/* Point-back pulse on what a session pointed at. */
+@keyframes dg-flash{0%,100%{opacity:1}50%{opacity:.35}}
+.dg-flash{animation:dg-flash .45s ease-in-out 3}
+@media (prefers-reduced-motion: reduce){.dg-flash{animation:none}}
 
 .dg-inspector{border-top:1px solid var(--dg-line);padding:12px;max-height:44%;overflow:auto}
 .dg-inspector h4{margin:0 0 8px;font-size:13px}

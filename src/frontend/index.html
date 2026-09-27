@@ -4,13 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dag-generator</title>
+<link rel="stylesheet" href="/kit/ask-cards.css">
+<link rel="stylesheet" href="/kit/rail.css">
+<link rel="stylesheet" href="/kit/channel-picker.css">
 <link rel="stylesheet" href="/dg.css">
 </head>
 <body>
 <div id="dg-stage"></div>
 <script type="module">
   import { mount } from '/app.mjs';
-  mount({ stage: document.getElementById('dg-stage') });
+  // ?config=<slug> opens a saved DAG on load — how `dag open` hands one to the page.
+  const config = new URLSearchParams(location.search).get('config');
+  mount({ stage: document.getElementById('dg-stage'), config });
 </script>
 </body>
 </html>

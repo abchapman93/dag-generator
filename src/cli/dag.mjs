@@ -8,13 +8,22 @@
 //   dag render --dagitty "$(cat g.txt)" --format pdf -o fig.pdf      # compiles
 //   dag convert --formula "Y ~ A + L" --to dagitty
 //
+// Live app (the collab bus — see skills/dag-generator/SKILL.md, Path C):
+//   dag draft   --title "Adherence" --formula "..."   # a claude-* draft, never Alec's DAG
+//   dag open    <slug> | --title T <input>             # start the app, open ?config=<slug>
+//   dag suggest --formula "..." [--rationale R]        # a dag-patch card against the open DAG
+//
 // Input (one of): --formula S | --dagitty S | --tikz S | --in FILE [--from T] | stdin
 // Formats: json formula dagitty tex svg html png pdf
 // Flags:   --style informal|manuscript  --wrap picture|standalone|figure
 //          --layout / --no-layout  --compile  -o FILE
 
 import { readFile, writeFile } from 'node:fs/promises';
-import { extname } from 'node:path';
+import { extname, join, dirname } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import * as formula from '../engine/formula.mjs';
 import * as dagitty from '../engine/dagitty.mjs';
 import * as tikz from '../engine/tikz.mjs';
@@ -22,6 +31,10 @@ import { layout } from '../engine/layout.mjs';
 import { toSVG } from '../engine/svg.mjs';
 import { toHTML } from '../engine/html.mjs';
 import { validate } from '../engine/model.mjs';
+import { diffModels, describeOps, NODE_FIELDS, EDGE_FIELDS } from '../engine/patch.mjs';
+
+const run = promisify(execFile);
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const TEXT_FORMATS = new Set(['json', 'formula', 'dagitty', 'tex', 'svg', 'html']);
 const BINARY_FORMATS = new Set(['png', 'pdf']);
@@ -32,7 +45,7 @@ function parseArgs(argv) {
     const t = argv[i];
     if (t.startsWith('--')) {
       const key = t.slice(2);
-      if (['layout', 'no-layout', 'compile'].includes(key)) a[key] = true;
+      if (['layout', 'no-layout', 'compile', 'positions', 'print', 'dry-run'].includes(key)) a[key] = true;
       else a[key] = argv[++i];
     } else if (t === '-o') a.o = argv[++i];
     else a._.push(t);
@@ -114,11 +127,94 @@ async function render(model, format, a) {
   }
 }
 
+// ---- live app: the server's bus-facing routes ----
+
+const hasInput = (a) => a.formula != null || a.dagitty != null || a.tikz != null || a.in != null;
+const inputKind = (a) => (a.formula != null ? 'formula' : a.dagitty != null ? 'dagitty' : a.tikz != null ? 'tikz'
+  : a.in != null ? (a.from || 'file') : (a.from || 'formula'));
+
+function appUrl(a) {
+  const u = a.url || process.env.DAG_GENERATOR_URL || `http://127.0.0.1:${process.env.DAG_GENERATOR_PORT || 4180}/`;
+  return u.endsWith('/') ? u : `${u}/`;
+}
+
+async function api(a, method, path, body) {
+  let res;
+  try {
+    res = await fetch(`${appUrl(a)}dag/api${path}`, {
+      method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch { return { status: 0, body: null }; }
+  return { status: res.status, body: await res.json().catch(() => null) };
+}
+
+async function ensureServer(a) {
+  if ((await api(a, 'GET', '/state')).status === 200) return;
+  if (a.url || process.env.DAG_GENERATOR_URL) fail(`no dag-generator at ${appUrl(a)}`);
+  await run(join(REPO, 'bin', 'dag-generator'), ['--start'], { env: { ...process.env, DAG_GENERATOR_DIR: REPO } });
+}
+
+async function draft(a) {
+  if (!a.title) fail('draft needs --title');
+  const model = await loadModel(a);
+  const { status, body } = await api(a, 'PUT', '/claude/configs', { title: a.title, model });
+  if (status === 409) fail(`${body.detail} (with it open: dag suggest <input>)`);
+  if (status !== 200) fail(status ? (body?.error || `server said ${status}`) : `no dag-generator at ${appUrl(a)} (dag open starts it)`);
+  process.stderr.write(`${body.replaced ? 'replaced' : 'wrote'} draft ${body.slug}
+`);
+  return body;
+}
+
+async function openCmd(a) {
+  await ensureServer(a);
+  let slug = a._[1];
+  if (hasInput(a)) slug = (await draft(a)).slug;
+  const url = slug ? `${appUrl(a)}?config=${encodeURIComponent(slug)}` : appUrl(a);
+  if (!a.print) await run('open', [url]).catch(() => {});
+  process.stdout.write(`${url}\n`);
+}
+
+// A dag-patch card against the DAG on screen. The suggestion is compared with
+// what the page last reported (GET /current), so the card's ops are relative to
+// exactly what Alec sees. A formula or dagitty input carries structure only, so
+// only nodes and edges are compared — never labels, roles, styles or colours
+// Alec has set by hand.
+async function suggest(a) {
+  const cur = await api(a, 'GET', '/current');
+  if (cur.status !== 200) fail(cur.status ? cur.body?.error : `no dag-generator at ${appUrl(a)}`);
+  const base = cur.body.model;
+  const want = await loadModel(a);
+  const structural = ['formula', 'dagitty'].includes(inputKind(a));
+  const ops = diffModels(base, want, {
+    nodeFields: structural ? [] : NODE_FIELDS,
+    edgeFields: structural ? [] : EDGE_FIELDS,
+    positions: !!a.positions,
+  });
+  if (!ops.length) fail('no changes: the suggestion matches the DAG on screen');
+  for (const d of describeOps(ops, base)) process.stderr.write(`  ${d.sign} ${d.text}\n`);
+
+  const slug = cur.body.slug ?? null;
+  const payload = { type: 'dag-patch', subject: `dag:${slug || 'scratch'}`, base_slug: slug, ops };
+  if (a.rationale) payload.rationale = a.rationale;
+  if (a['dry-run']) { process.stdout.write(JSON.stringify(payload, null, 2) + '\n'); return; }
+
+  const script = process.env.OUTBOUND_PY || join(homedir(), '.claude', 'skills', 'session-bridge', 'scripts', 'outbound.py');
+  const prompt = a.prompt || `Suggested change to ${cur.body.name || slug || 'the open DAG'} (${ops.length} op${ops.length === 1 ? '' : 's'})`;
+  const args = [script, 'emit', '--prompt', prompt, '--option', 'Accept', '--option', 'Reject',
+    '--target', 'dag-generator', '--payload', JSON.stringify(payload)];
+  if (a.channel) args.push('--channel', a.channel);
+  const { stdout } = await run('python3', args);
+  process.stdout.write(stdout);
+}
+
 async function main() {
   const a = parseArgs(process.argv.slice(2));
   const cmd = a._[0] || 'render';
   if (cmd === 'help' || a.help) { process.stdout.write(HELP); return; }
-  if (!['render', 'convert'].includes(cmd)) fail(`unknown command '${cmd}' (try: render, convert)`);
+  if (cmd === 'draft') { const d = await draft(a); process.stdout.write(`${d.url || d.slug}\n`); return; }
+  if (cmd === 'open') return openCmd(a);
+  if (cmd === 'suggest') return suggest(a);
+  if (!['render', 'convert'].includes(cmd)) fail(`unknown command '${cmd}' (try: render, convert, draft, open, suggest)`);
 
   const format = a.to || a.format || 'svg';
   if (!TEXT_FORMATS.has(format) && !BINARY_FORMATS.has(format)) fail(`unknown format '${format}'`);
@@ -151,6 +247,12 @@ Input : --formula S | --dagitty S | --tikz S | --in FILE [--from json|formula|da
 Format: json formula dagitty tex svg html png pdf
 Flags : --style informal|manuscript  --wrap picture|standalone|figure
         --layout | --no-layout   --compile (LaTeX SVG/PNG)   -o FILE
+
+Live app (http://127.0.0.1:4180/ unless --url or DAG_GENERATOR_URL):
+  dag draft   --title T <input>              a claude-* draft (refused once Alec edits it)
+  dag open    [slug] [--title T <input>]     start the app and open a DAG (--print: URL only)
+  dag suggest <input> [--rationale R] [--channel C] [--prompt P] [--positions] [--dry-run]
+              a dag-patch card against the open DAG (Accept applies it as one undo step)
 `;
 
 main().catch((e) => fail(e.message));

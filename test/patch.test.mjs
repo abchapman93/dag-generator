@@ -93,6 +93,20 @@ describe('patch', () => {
     for (const n of a.nodes) expect(model.nodes.find((m) => m.id === n.id)).toMatchObject({ x: n.x, y: n.y });
   });
 
+  it("never places a node on an existing edge's line", () => {
+    const m = { meta: { kind: 'dag' }, nodes: [
+      { id: 'A', x: 0, y: 0, style: 'rv', label: 'A' }, { id: 'B', x: 2, y: 0, style: 'rv', label: 'B' },
+    ], edges: [{ from: 'A', to: 'B', style: 'causal', bend: 0 }] };
+    const { model } = applyPatch(m, [
+      { op: 'add-node', node: { id: 'M' } },
+      { op: 'add-edge', edge: { from: 'A', to: 'M' } },
+      { op: 'add-edge', edge: { from: 'M', to: 'B' } },
+    ]);
+    const M = model.nodes.find((n) => n.id === 'M');
+    expect(M.x === 1 && M.y === 0).toBe(false);
+    expect(Math.abs(M.x - 1) + Math.abs(M.y)).toBe(1);
+  });
+
   it('keeps explicit coordinates when a new node has them', () => {
     const a = build('Y ~ A');
     const { model } = applyPatch(a, [{ op: 'add-node', node: { id: 'Q', x: 7, y: 3 } }]);

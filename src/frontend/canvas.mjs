@@ -5,6 +5,7 @@
 
 import { tex2disp, xcolorToHex, FLOW, UPRIGHT_STYLES, autoHalfWidth } from '/engine/svg.mjs';
 import { formatNodeLabel } from '/engine/swig.mjs';
+import { formatHandle, resolveHandles } from '/engine/handles.mjs';
 
 const CELL = 74;
 const MARGIN = 1.2;
@@ -342,10 +343,10 @@ export function createCanvas(host, cbs) {
   function itemDescriptor(sel) {
     if (sel.type === 'node') {
       const n = model.nodes.find((x) => x.id === sel.id); if (!n) return null;
-      return { handle: `@node:${n.id}`, label: n.label || '', style: n.style || '', el: svg.querySelector(`.dg-node[data-id="${cssEscape(n.id)}"]`) };
+      return { handle: formatHandle({ type: 'node', id: n.id }), label: n.label || '', style: n.style || '', el: svg.querySelector(`.dg-node[data-id="${cssEscape(n.id)}"]`) };
     }
     const e = model.edges[sel.index]; if (!e) return null;
-    return { handle: `@edge:${e.from}->${e.to}`, label: e.label || '', style: e.style || '', el: svg.querySelector(`.dg-edge[data-edge="${sel.index}"]`) };
+    return { handle: formatHandle({ type: 'edge', from: e.from, to: e.to }), label: e.label || '', style: e.style || '', el: svg.querySelector(`.dg-edge[data-edge="${sel.index}"]`) };
   }
   async function pointAt() {
     if (!selection.length) return null;
@@ -382,6 +383,37 @@ export function createCanvas(host, cbs) {
       } finally { URL.revokeObjectURL(url); }
     } catch { return null; }
   }
+  // ---- point-back: a session's handles, selected and pulsed ----
+  // Pans (never zooms) to bring them into view only when they are off-screen, and
+  // only because Alec clicked "Show me" — nothing scrolls on its own.
+  function selectHandles(handles) {
+    const { found, missing } = resolveHandles(model, handles);
+    selection = found;
+    const pts = found.flatMap((it) => {
+      if (it.type === 'node') { const n = model.nodes.find((x) => x.id === it.id); return n ? [n] : []; }
+      const e = model.edges[it.index];
+      return e ? model.nodes.filter((n) => n.id === e.from || n.id === e.to) : [];
+    });
+    if (pts.length) {
+      const baseW = (view.maxx - view.minx) * CELL, baseH = (view.maxy - view.miny) * CELL;
+      const vw = baseW / zoom, vh = baseH / zoom;
+      const vx = baseW / 2 - vw / 2 + pan.x, vy = baseH / 2 - vh / 2 + pan.y;
+      const off = pts.some((n) => { const x = gx2px(n.x), y = gy2px(n.y); return x < vx || x > vx + vw || y < vy || y > vy + vh; });
+      if (off) {
+        const cx = pts.reduce((a, n) => a + gx2px(n.x), 0) / pts.length;
+        const cy = pts.reduce((a, n) => a + gy2px(n.y), 0) / pts.length;
+        pan = { x: cx - baseW / 2, y: cy - baseH / 2 };
+      }
+    }
+    render(); cbs.onSelect?.(selection);
+    found.forEach((it) => {
+      const el = it.type === 'node'
+        ? svg.querySelector(`.dg-node[data-id="${cssEscape(it.id)}"]`)
+        : svg.querySelector(`.dg-edge[data-edge="${it.index}"]`);
+      el?.classList.add('dg-flash');
+    });
+    return { found: found.length, missing };
+  }
   const cssEscape = (s) => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&');
 
   // ---- public API ----
@@ -397,6 +429,7 @@ export function createCanvas(host, cbs) {
     getZoom() { return zoom; },
     rerender() { render(); },
     pointAt,
+    selectHandles,
     getSelection() { return selection; },
     selectNode(id) { if (model.nodes.some((n) => n.id === id)) { selection = [{ type: 'node', id }]; render(); cbs.onSelect?.(selection); } },
     clearSelection() { selection = []; render(); cbs.onSelect?.(selection); },

@@ -1,7 +1,7 @@
-// dag-generator app orchestrator. Exposes mount({ stage }) as a self-managing
-// module so the SAME code runs standalone (index.html) and, later, as an
-// analysis-room tab (window.DagGenerator.mount({ stage, ... })). All engine work
-// is client-side; only LaTeX compile hits the server.
+// dag-generator app orchestrator. Exposes mount({ stage, apiBase, config }) as a
+// self-managing module so the SAME code runs standalone (index.html) and, later,
+// as an analysis-room tab. All engine work is client-side; the server compiles
+// LaTeX, stores configs, and is this page's door onto the collab bus (kit).
 
 import * as formula from '/engine/formula.mjs';
 import * as dagitty from '/engine/dagitty.mjs';
@@ -11,7 +11,14 @@ import { toSVG } from '/engine/svg.mjs';
 import { toHTML } from '/engine/html.mjs';
 import { intervene } from '/engine/swig.mjs';
 import { NODE_STYLES, EDGE_STYLES, ROLES, cloneModel } from '/engine/model.mjs';
+import { formatHandle } from '/engine/handles.mjs';
+import { applyPatch, describeOps, touchedHandles } from '/engine/patch.mjs';
+import { mountAskCards } from '/kit/ask-cards.mjs';
+import { mountRail } from '/kit/rail.mjs';
+import { mountChannelPicker } from '/kit/channel-picker.mjs';
 import { createCanvas } from '/canvas.mjs';
+
+export const SURFACE = 'dag-generator';   // the bus target for this page's cards
 
 // Default DAG loaded on a fresh open (Alec's paper DAG). Canonical TikZ so its
 // coordinates are preserved verbatim.
@@ -39,7 +46,7 @@ const START = [
   '\\draw[causal] (V0) to (H1);',
 ].join('\n');
 
-export function mount({ stage }) {
+export function mount({ stage, apiBase = '/dag/api', config = null }) {
   stage.innerHTML = TEMPLATE;
   const $ = (sel) => stage.querySelector(sel);
   let model = tikz.parse(START).model;
@@ -50,6 +57,7 @@ export function mount({ stage }) {
   let currentSlug = null, currentName = '';  // the open saved-config, if any
   let loading = false, autosaveTimer = null; // autosave-to-current-config state
   let undoStack = [], redoStack = [], lastSnapshot = JSON.stringify(model), lastRecordTime = 0;
+  let currentTimer = null;                   // debounced "what's on screen" report (mirror)
 
   function showRevert(on) { const b = $('[data-act=revert]'); if (b) b.hidden = !on; }
   function invalidateRevert() { if (preLayout) { preLayout = null; showRevert(false); } }
@@ -143,21 +151,18 @@ export function mount({ stage }) {
     showRevert(false); status('ok', null, 'layout reverted');
   });
 
-  document.addEventListener('keydown', (e) => {
+  const onKey = (e) => {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); newDag(); return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !isTyping(e)) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || e.key === 'Y') && !isTyping(e)) { e.preventDefault(); redo(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && !isTyping(e)) { e.preventDefault(); canvas.deleteSelection(); }
     if ((e.key === 'p' || e.key === 'P') && !isTyping(e) && !e.metaKey && !e.ctrlKey) { e.preventDefault(); pointAt(); return; }
     if (e.key === 'Escape') canvas.setMode('select');
-  });
+  };
+  document.addEventListener('keydown', onKey);
 
-  // collapse the side panel
-  $('[data-act=collapse]').addEventListener('click', () => {
-    const collapsed = stage.querySelector('.dg-app').classList.toggle('side-collapsed');
-    $('[data-act=collapse]').textContent = collapsed ? '‹' : '›';
-    setTimeout(() => canvas.refit(), 260);
-  });
+  // ---- the rail (kit): width, fold, and the widen-while-a-card-is-open rule ----
+  const rail = mountRail({ host: $('.dg-side'), storageKey: 'collab-rail:dag-generator', label: 'panel', minMain: 420 });
 
   // ---- configs: save / open / delete ----
   function setCurrent(slug, name) {
@@ -181,7 +186,7 @@ export function mount({ stage }) {
     const slug = currentSlug, name = currentName;
     model.meta.style = renderStyle; model.meta.swigStyle = swigStyle; model.meta.title = name;
     try {
-      const res = await fetch('/dag/api/configs', {
+      const res = await fetch(`${apiBase}/configs`, {
         method: 'PUT', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name, model, slug }),
       });
@@ -229,12 +234,12 @@ export function mount({ stage }) {
   async function refreshConfigList() {
     const box = $('#cfg-list');
     let list = [];
-    try { list = await (await fetch('/dag/api/configs')).json(); } catch { /* offline */ }
+    try { list = await (await fetch(`${apiBase}/configs`)).json(); } catch { /* offline */ }
     if (!list.length) { box.innerHTML = '<p class="dg-muted dg-cfg-empty">No saved configs yet.</p>'; return; }
     box.innerHTML = list.map((c) => `
       <div class="dg-cfg-item${c.slug === currentSlug ? ' on' : ''}" data-slug="${esc(c.slug)}">
         <button class="dg-cfg-open" data-open="${esc(c.slug)}" title="open">
-          <span class="dg-cfg-name">${esc(c.name)}</span>
+          <span class="dg-cfg-name">${esc(c.name)}</span>${c.origin === 'claude' ? '<span class="dg-badge" title="drafted by a Claude session">Claude</span>' : ''}
           <span class="dg-muted">${c.nodes}n · ${c.edges}e</span>
         </button>
         <button class="dg-cfg-del" data-del="${esc(c.slug)}" title="delete">✕</button>
@@ -246,7 +251,7 @@ export function mount({ stage }) {
     const name = ($('#cfg-name').value || currentName || 'dag').trim();
     model.meta.style = renderStyle; model.meta.swigStyle = swigStyle; model.meta.title = name;
     try {
-      const res = await fetch('/dag/api/configs', {
+      const res = await fetch(`${apiBase}/configs`, {
         method: 'PUT', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name, model }),
       });
@@ -259,7 +264,7 @@ export function mount({ stage }) {
   }
   async function openConfig(slug) {
     try {
-      const cfg = await (await fetch(`/dag/api/configs/${slug}`)).json();
+      const cfg = await (await fetch(`${apiBase}/configs/${encodeURIComponent(slug)}`)).json();
       await flushAutosave();   // persist pending edits to the config we're leaving
       loading = true;
       model = cfg.model;
@@ -277,7 +282,7 @@ export function mount({ stage }) {
   }
   async function deleteConfig(slug) {
     try {
-      await fetch(`/dag/api/configs/${slug}`, { method: 'DELETE' });
+      await fetch(`${apiBase}/configs/${encodeURIComponent(slug)}`, { method: 'DELETE' });
       if (slug === currentSlug) setCurrent(null, '');
       await refreshConfigList();
     } catch (e) { status('warn', null, `delete failed: ${e.message}`); }
@@ -324,7 +329,7 @@ export function mount({ stage }) {
       if (fmt === 'html') return toHTML(model, { style: renderStyle, swigStyle });
       const format = fmt === 'svg-tex' ? 'svg' : fmt;  // compiled formats
       status('compiling', null, 'compiling with LaTeX…');
-      const res = await fetch('/dag/api/compile', {
+      const res = await fetch(`${apiBase}/compile`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, format }),
       });
       if (!res.ok) {
@@ -384,9 +389,9 @@ export function mount({ stage }) {
     let copied = false, signalled = false;
     if (clip) { try { await navigator.clipboard.writeText(clip); copied = true; } catch { /* clipboard blocked */ } }
     try {
-      const res = await fetch('/dag/api/signal', {
+      const res = await fetch(`${apiBase}/signal`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ handles: p ? p.handles : [], note: note || undefined, source: location.href, png: p ? p.png : null }),
+        body: JSON.stringify({ handles: p ? p.handles : [], note: note || undefined, source: location.href, png: p ? p.png : null, channel: picker.getChannel() || undefined }),
       });
       signalled = res.ok;
     } catch { /* no server (static/embedded) — anything copyable is still on the clipboard */ }
@@ -409,98 +414,150 @@ export function mount({ stage }) {
     const d = stage.querySelector('.dg-pointat-more'); if (d) d.open = false;
   }
 
-  // ---- ask cards (the return channel: session → here) ----
-  // The reverse direction of point-at. A running session has no inbound control
-  // channel and can't be pushed to — but this page can poll. The session writes an
-  // ask to ~/.claude/web-context/outbound/; we pull the unanswered ones, render each
-  // as a card, and Alec's click goes back out through the ORDINARY signal door
-  // carrying in_reply_to. The loop closes without the session needing a port.
+  // ---- the collab bus (kit): channel, ask cards, patch cards, point-back ----
+  // The session writes asks to ~/.claude/web-context/outbound/; the kit polls
+  // them into the rail and Alec's answer goes back out through the ordinary
+  // signal door carrying in_reply_to.
   //
-  // GUARDRAIL: an ask is data, not a command to the page. Prompts and labels are
-  // rendered as escaped text and the chosen label is echoed back — nothing from an
-  // ask file is ever evaluated here.
-  const ASK_POLL_MS = 2000;
-  // ids currently on screen; skips repaints that would wipe half-typed free text
-  // under the cursor. null (not '') means "repaint regardless" — '' is the real
-  // signature of an empty list, so using it as the sentinel would swallow exactly
-  // the repaint that clears the last answered card.
-  let renderedAsks = null;
-  let askTimer = null;
+  // GUARDRAIL: an ask is data, not a command to the page. The kit escapes every
+  // prompt and label; the payload bodies below escape theirs, and a patch
+  // preview is an <img> of an SVG, so nothing from an ask file ever runs here.
+  let cards = null;   // assigned below; the picker's onChange can fire first
+  const picker = mountChannelPicker({
+    container: $('#dg-channel'),
+    basePath: apiBase,
+    storageKey: 'collab-channel:dag-generator',
+    onChange: (id) => { status('ok', null, id ? 'attached to channel' : 'no channel — broadcasting'); cards?.refresh(); },
+    onStatus: (kind, msg) => status(kind === 'error' ? 'warn' : 'ok', null, msg),
+  });
 
-  async function pollAsks() {
-    let asks = [];
-    try {
-      const res = await fetch('/dag/api/asks?target=dag-generator');
-      if (!res.ok) return;
-      asks = await res.json();
-    } catch { return; }   // no server (static/embedded) — the channel is simply off
-    const sig = asks.map((a) => a.ask_id).join(',');
-    if (sig === renderedAsks) return;
-    renderedAsks = sig;
-    renderAsks(asks);
+  const isPatch = (ask) => ask?.payload?.type === 'dag-patch' && Array.isArray(ask.payload.ops);
+  const anchorsOf = (ask) => {
+    const a = ask?.payload?.anchor;
+    const list = Array.isArray(a) ? a : (a ? [a] : []);
+    return isPatch(ask) ? [...new Set([...list, ...touchedHandles(ask.payload.ops, model)])] : list;
+  };
+
+  // Card bodies. A patch card shows its ops and a preview of the DAG AFTER them,
+  // computed here against the live model; any other card carrying `anchor`
+  // handles (the session pointing back) gets a Show me.
+  function renderPayload(ask) {
+    const showMe = anchorsOf(ask).length ? '<button class="dg-btn dg-showme" type="button">⌖ Show me</button>' : '';
+    if (!isPatch(ask)) return showMe ? `<div class="dg-card-extra">${showMe}</div>` : '';
+    const p = ask.payload;
+    const lines = describeOps(p.ops, model).map((d) =>
+      `<li class="dg-op dg-op-${d.sign === '+' ? 'add' : d.sign === '−' ? 'del' : 'set'}"><b>${esc(d.sign)}</b> ${esc(d.text)}</li>`).join('');
+    const { model: after, conflicts } = applyPatch(model, p.ops);
+    let preview = '';
+    if (!conflicts.length) {
+      try {
+        const svg = toSVG(after, { style: renderStyle, swigStyle, background: '#ffffff' });
+        preview = `<img class="dg-patch-preview" alt="the DAG after this patch" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}">`;
+      } catch { /* no preview is better than no card */ }
+    }
+    const wrongDag = 'base_slug' in p && (p.base_slug ?? null) !== (currentSlug ?? null);
+    return `<div class="dg-patch">
+      ${ask.stale ? '<p class="dg-stale">superseded — a newer suggestion for this DAG is open</p>' : ''}
+      ${p.rationale ? `<p class="dg-patch-why">${esc(p.rationale)}</p>` : ''}
+      <ul class="dg-ops">${lines}</ul>
+      ${wrongDag ? `<p class="dg-patch-warn">For ${esc(p.base_slug || 'the unsaved DAG')} — open it to accept.</p>` : ''}
+      ${conflicts.length ? `<p class="dg-patch-warn">Doesn't apply to the DAG on screen: ${esc(conflicts.join('; '))}</p>` : preview}
+      ${showMe}
+    </div>`;
   }
 
-  function renderAsks(asks) {
-    const box = $('.dg-asks');
-    const app = $('.dg-app');
-    box.hidden = !asks.length;
-    // The side panel widens (340 → 480) while any ask is open so option previews
-    // have room, and snaps back on answer — 340 leaves them too small to earn
-    // their place, and that preview is what makes an ask worth asking (A2).
-    app.classList.toggle('asks-open', asks.length > 0);
-    // An ask nobody can see is worse than no ask, so one re-opens a collapsed panel.
-    if (asks.length) app.classList.remove('side-collapsed');
-    if (!asks.length) { box.innerHTML = ''; return; }
-    box.innerHTML = asks.map((a) => `
-      <div class="dg-ask" data-ask="${esc(a.ask_id)}">
-        <p class="dg-ask-q">${esc(a.prompt)}</p>
-        ${a.options.length ? `<div class="dg-ask-opts">${a.options.map((o) => `
-          <button class="dg-ask-opt" data-opt="${esc(o.id)}" data-label="${esc(o.label)}">
-            ${o.image ? `<img src="${esc(o.image)}" alt="">` : ''}
-            <span>${esc(o.label)}</span>
-          </button>`).join('')}</div>` : ''}
-        ${a.allow_free_text ? `<div class="dg-ask-free">
-          <input class="dg-ask-text" placeholder="${a.options.length ? 'or answer in your own words…' : 'your answer…'}" spellcheck="false">
-          <button class="dg-ask-send" data-opt="" data-label="">send</button>
-        </div>` : ''}
-      </div>`).join('');
-  }
-
-  // Answer one ask. A chosen option and typed text COMPOSE into a single note,
-  // exactly as Slice 1's quick-replies do: the option is the general answer, the
-  // typed text refines it.
-  async function sendAnswer(askId, optionId, label) {
-    const card = $(`.dg-ask[data-ask="${CSS.escape(askId)}"]`);
-    const typed = card?.querySelector('.dg-ask-text')?.value.trim() || '';
-    const note = [label, typed].filter(Boolean).join(' — ');
-    if (!note) { status('warn', null, 'answer is empty'); return; }
+  // Accept / Reject on a patch card. The server validates and records the
+  // answer FIRST (stale, superseded, retracted, wrong DAG → 409, card stays);
+  // only then does the patch land, as one undo step.
+  async function interceptAnswer(ask, { optionId, label, typed }) {
+    if (!isPatch(ask)) return false;
+    const pick = `${optionId || ''} ${label || ''}`;
+    const outcome = /accept/i.test(pick) ? 'accept' : /reject/i.test(pick) ? 'reject' : null;
+    if (!outcome) { status('warn', null, 'this card resolves with Accept or Reject'); return true; }
+    let next = null;
+    if (outcome === 'accept') {
+      const r = applyPatch(model, ask.payload.ops);
+      if (r.conflicts.length) { status('warn', null, `can't apply: ${r.conflicts.join('; ')}`); return true; }
+      next = r.model;
+    }
+    await reportCurrent();   // the server checks the patch's base against what is on screen NOW
+    let res;
     try {
-      const res = await fetch('/dag/api/signal', {
+      res = await fetch(`${apiBase}/suggestions/${encodeURIComponent(ask.ask_id)}/resolve`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ note, in_reply_to: askId, option_id: optionId || undefined, source: location.href }),
+        body: JSON.stringify({ outcome, note: typed || undefined, channel: picker.getChannel() || undefined, source: location.href }),
       });
-      if (!res.ok) throw new Error('refused');
-      status('ok', null, `↩ answered — “${note}”`);
-      renderedAsks = null;   // force the next poll to repaint rather than diff-skip
-      pollAsks();
-    } catch { status('warn', null, 'could not send the answer'); }
+    } catch { status('warn', null, 'could not reach the server'); return true; }
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      status('warn', null, `not applied — ${e.detail || e.error || res.status}`);
+      return true;
+    }
+    if (next) {
+      model = next; model.meta.style = renderStyle; model.meta.swigStyle = swigStyle;
+      canvas.setModel(model, { refit: true }); canvas.clearSelection();
+      lastRecordTime = 0;   // its own undo step, never merged into an edit burst
+      regenPanels(); renderInspector(null); invalidateRevert();
+      status('ok', null, `✓ applied ${ask.payload.ops.length} change${ask.payload.ops.length === 1 ? '' : 's'} — ⌘Z to undo`);
+    } else status('ok', null, '✕ rejected — the session has been told');
+    return true;
   }
 
+  // Say something about a card without resolving it (own-resolution cards).
+  async function onComment(ask, typed) {
+    try {
+      const res = await fetch(`${apiBase}/signal`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ note: typed, in_reply_to: ask.ask_id, comment: true, channel: ask.channel || picker.getChannel() || undefined, source: location.href }),
+      });
+      if (res.ok) status('ok', null, `✉ comment sent — “${typed}”`);
+      return res.ok;
+    } catch { status('warn', null, 'could not send the comment'); return false; }
+  }
+
+  cards = mountAskCards({
+    container: $('.dg-asks'),
+    target: SURFACE,
+    basePath: apiBase,
+    dismiss: true,
+    channel: () => picker.getChannel(),
+    onStatus: (kind, msg) => status(kind === 'ok' ? 'ok' : 'warn', null, msg),
+    onOpenChange: (open, n) => { rail.setOpen(open); rail.setBadge(n); },
+    renderPayload,
+    ownsResolution: isPatch,
+    interceptAnswer,
+    onComment,
+  });
+
+  // Show me: the session pointing back. Select and pulse, only on this click.
   $('.dg-asks').addEventListener('click', (e) => {
-    const btn = e.target.closest('.dg-ask-opt, .dg-ask-send');
-    if (!btn) return;
-    const card = btn.closest('.dg-ask');
-    sendAnswer(card.dataset.ask, btn.dataset.opt, btn.dataset.label);
+    if (!e.target.closest('.dg-showme')) return;
+    const ask = e.target.closest('.ck-ask')?._ask;
+    const { found, missing } = canvas.selectHandles(anchorsOf(ask));
+    if (missing.length) status('warn', null, `not on the canvas any more: ${missing.join(', ')}`);
+    else status('ok', null, `⌖ showing ${found} item${found === 1 ? '' : 's'}`);
   });
-  $('.dg-asks').addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' || !e.target.classList.contains('dg-ask-text')) return;
-    sendAnswer(e.target.closest('.dg-ask').dataset.ask, '', '');
-  });
+
+  // ---- what's on screen → the server (the bus mirror + the patch base) ----
+  function scheduleReport() {
+    clearTimeout(currentTimer);
+    currentTimer = setTimeout(reportCurrent, 800);
+  }
+  async function reportCurrent() {
+    clearTimeout(currentTimer); currentTimer = null;
+    model.meta.style = renderStyle; model.meta.swigStyle = swigStyle;
+    try {
+      await fetch(`${apiBase}/current`, {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug: currentSlug, name: currentName || null, model }),
+      });
+    } catch { /* no server (static/embedded) — no mirror */ }
+  }
 
   // Resolve a selection-set item to its display handle (for the multi-select summary).
   function handleOf(item) {
-    if (item.type === 'node') { const n = model.nodes.find((x) => x.id === item.id); return n ? `@node:${n.id}` : ''; }
-    const e = model.edges[item.index]; return e ? `@edge:${e.from}->${e.to}` : '';
+    if (item.type === 'node') { const n = model.nodes.find((x) => x.id === item.id); return n ? formatHandle(item) : ''; }
+    const e = model.edges[item.index]; return e ? formatHandle({ type: 'edge', from: e.from, to: e.to }) : '';
   }
 
   // ---- inspector ----
@@ -589,7 +646,8 @@ export function mount({ stage }) {
       p.el.value = p.emit();
     }
     recordUndo();        // every mutation routes through here → snapshot for undo …
-    scheduleAutosave();  // … and auto-save to the open config
+    scheduleAutosave();  // … auto-save to the open config …
+    scheduleReport();    // … and tell the server what's on screen (the bus mirror)
   }
   function status(kind, flags, msg) {
     const el = $('.dg-status');
@@ -600,10 +658,18 @@ export function mount({ stage }) {
   }
 
   regenPanels(); renderInspector(null); status('ok');
-  pollAsks(); askTimer = setInterval(pollAsks, ASK_POLL_MS);
-  // destroy() exists for the poll timer: as an analysis-room tab this module can be
-  // unmounted, and an interval outliving its stage would keep fetching forever.
-  return { getModel: () => model, destroy: () => { clearInterval(askTimer); askTimer = null; } };
+  if (config) openConfig(config);
+  // destroy() exists for the timers and listeners: as an analysis-room tab this
+  // module can be unmounted, and a poll or keydown outliving its stage would keep
+  // running forever.
+  return {
+    getModel: () => model,
+    destroy: () => {
+      document.removeEventListener('keydown', onKey);
+      clearTimeout(autosaveTimer); clearTimeout(currentTimer);
+      cards.destroy(); picker.destroy(); rail.destroy();
+    },
+  };
 }
 
 // ---- small DOM utils ----
@@ -676,7 +742,7 @@ const TEMPLATE = `
       </div>
     </details>
     <span class="dg-grow"></span>
-    <button class="dg-btn dg-collapse" data-act="collapse" title="collapse panel">›</button>
+    <span class="dg-channel" id="dg-channel"></span>
   </div>
   <div class="dg-body">
     <div class="dg-canvas-wrap">
@@ -701,7 +767,7 @@ const TEMPLATE = `
       </div>
       <div class="dg-status ok"></div>
       <div class="dg-inspector"></div>
-      <div class="dg-asks" hidden></div>
+      <div class="ck-asks dg-asks" hidden></div>
     </aside>
   </div>
 </div>`;
