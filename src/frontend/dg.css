@@ -27,18 +27,6 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 .dg-menu button{font:inherit;font-size:13px;text-align:left;border:0;background:none;border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--dg-ink)}
 .dg-menu button:hover{background:var(--dg-accent-weak);color:var(--dg-accent-ink)}
 
-.dg-pointat{display:inline-flex;align-items:stretch}
-.dg-pointat-main{border-top-right-radius:0;border-bottom-right-radius:0}
-.dg-pointat-chevron{border-top-left-radius:0;border-bottom-left-radius:0;border-left:0;padding:6px 7px;font-size:11px}
-.dg-pointat-menu{min-width:252px;padding:6px}
-.dg-qr-label{margin:1px 0 5px;font-size:12px;color:var(--dg-muted)}
-.dg-qr-row{display:flex;gap:5px;margin-bottom:6px}
-.dg-pointat-menu .dg-qr-row button{flex:1;padding:6px 4px;font-size:12px;background:#fff;color:var(--dg-ink);border:1px solid var(--dg-line)}
-.dg-pointat-menu .dg-qr-row button:hover{background:var(--dg-accent-weak);color:var(--dg-accent-ink);filter:none}
-.dg-pointat-menu input{width:100%;box-sizing:border-box;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--dg-line);border-radius:7px;color:var(--dg-ink);margin-bottom:6px}
-.dg-pointat-menu button{text-align:center;border:1px solid var(--dg-accent);background:var(--dg-accent);color:#fff;font-size:13px}
-.dg-pointat-menu button:hover{filter:brightness(.95);background:var(--dg-accent);color:#fff}
-
 .dg-current{font-size:12.5px;color:var(--dg-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dg-configs .dg-menu{min-width:230px;padding:6px}
 .dg-cfg-new{display:block;width:100%;font:inherit;font-size:13px;font-weight:600;text-align:left;border:0;background:none;border-radius:7px;padding:7px 9px;margin-bottom:5px;cursor:pointer;color:var(--dg-accent-ink)}
@@ -71,15 +59,44 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 .dg-zoom-label{font-size:11.5px;color:var(--dg-muted);min-width:40px;text-align:center;cursor:pointer;user-select:none}
 .dg-zoom-label:hover{color:var(--dg-accent-ink)}
 
-.dg-side{border-left:1px solid var(--dg-line);background:#fff;display:flex;flex-direction:column;min-height:0}   /* width, fold and grip: kit rail */
-.dg-side-tabs{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--dg-line)}
-.dg-tab{font:inherit;font-size:12.5px;border:0;background:none;padding:6px 12px;cursor:pointer;color:var(--dg-muted);border-radius:7px 7px 0 0}
-.dg-tab[aria-selected=true]{color:var(--dg-accent-ink);background:var(--dg-accent-weak);font-weight:600}
+/* The rail. Width, fold and grip are the kit's (rail.mjs); the chrome follows
+   learning's rail (~/Code/learning/shell/rail.css): a 3px accent stripe, uppercase
+   tracked tab labels, the active tab underlined in the accent, 1px borders. */
+.dg-side{border-left:1px solid var(--dg-line);border-top:3px solid var(--dg-accent);background:#fff;display:flex;flex-direction:column;min-height:0}
+.dg-side>.ck-rail-head{position:absolute;top:0;right:0;z-index:1;padding:6px 6px 0}   /* fold button rides the tab row */
+.dg-side>.ck-rail-head .ck-rail-badge{display:none}   /* expanded, the Session tab carries the count */
+.dg-rail-head{flex:0 0 auto;display:flex;align-items:stretch;padding:0 40px 0 10px;border-bottom:1px solid var(--dg-line)}
+.dg-rail-tabs{display:flex;flex-wrap:wrap;gap:0 2px;min-width:0}
+.dg-rail-tab{font:inherit;font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;color:#8a909c;background:none;border:0;padding:11px 7px 9px;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer}
+.dg-rail-tab:hover{color:var(--dg-ink)}
+.dg-rail-tab.is-active{color:var(--dg-accent-ink);border-bottom-color:var(--dg-accent)}
+.dg-rail-badge{font-size:10px;font-weight:700;margin-left:5px;background:var(--dg-accent-weak);color:var(--dg-accent-ink);border-radius:8px;padding:1px 6px}
+.dg-rail-badge[hidden]{display:none}
+.dg-rail-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.dg-rail-body[hidden]{display:none}
+.dg-session{overflow-y:auto;padding:12px 14px 34px}
 .dg-panels{flex:1;min-height:120px;display:flex}
+
+/* Session tab: channel chip, send box, then the cards (learning's Coach tab). */
+.dg-channel{margin-bottom:12px}
+.dg-channel:empty{display:none}
+.dg-section-label{font-size:11.5px;font-weight:660;letter-spacing:.8px;text-transform:uppercase;color:#8a909c;margin:0 0 10px}
+.dg-sel{margin:0 0 7px;font-size:11.5px;color:#8a909c;font-family:var(--dg-mono);word-break:break-word}
+.dg-sel.live{color:var(--dg-accent-ink)}
+#dg-note{display:block;width:100%;margin-bottom:8px;padding:7px 9px;font:inherit;font-size:13px;border:1px solid var(--dg-line);border-radius:7px;background:#fbfcfd;color:var(--dg-ink);resize:vertical}
+.dg-send-row{display:flex;align-items:center;gap:8px}
+.dg-btn-accent{background:var(--dg-accent);border-color:var(--dg-accent);color:#fff;font-weight:560}
+.dg-btn-accent:hover{background:var(--dg-accent);color:#fff;filter:brightness(.95)}
+.dg-qr{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:10px}
+.dg-qr-label{font-size:11.5px;color:#8a909c;margin-right:2px}
+.dg-qr-gap{width:6px}
+.dg-qr button{font:inherit;font-size:11.5px;border:1px solid var(--dg-line);background:#fff;border-radius:999px;padding:2px 9px;cursor:pointer;color:var(--dg-ink)}
+.dg-qr button:hover{border-color:var(--dg-accent);color:var(--dg-accent-ink);background:var(--dg-accent-weak)}
+.dg-asks{margin-top:14px;max-height:none;overflow:visible}   /* the tab body scrolls as one, as in learning */
 .dg-code{flex:1;width:100%;border:0;outline:0;resize:none;padding:12px;font-family:var(--dg-mono);font-size:12.5px;line-height:1.6;tab-size:2;color:var(--dg-ink)}
 .dg-code.hidden{display:none}
 
-.dg-status{padding:7px 12px;border-top:1px solid var(--dg-line);font-size:12.5px;min-height:32px}
+.dg-status{flex:none;margin-top:auto;padding:7px 12px;border-top:1px solid var(--dg-line);font-size:12.5px;min-height:32px}
 .dg-status.ok{color:var(--dg-accent-ink)}
 .dg-status.warn{color:var(--dg-warn)}
 .dg-status.busy{color:var(--dg-orange)}
@@ -101,8 +118,6 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 .ck-ask:has(.dg-stale) .ck-ask-q,.ck-ask:has(.dg-stale) .dg-ops,.ck-ask:has(.dg-stale) .dg-patch-preview,.ck-ask:has(.dg-stale) .ck-ask-opts{opacity:.5;filter:saturate(.35)}
 .dg-showme{font-size:12px;padding:3px 9px}
 .dg-badge{flex:none;display:inline-block;font-size:10.5px;font-weight:700;line-height:1;padding:2px 6px;margin-left:4px;border-radius:999px;background:#ece6f7;color:#5b3f99;vertical-align:1px}
-.dg-channel:empty{display:none}
-.dg-channel .ck-chan-menu{left:auto;right:0}   /* the chip sits at the toolbar's right end */
 /* Point-back pulse on what a session pointed at. */
 @keyframes dg-flash{0%,100%{opacity:1}50%{opacity:.35}}
 .dg-flash{animation:dg-flash .45s ease-in-out 3}

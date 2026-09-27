@@ -107,7 +107,7 @@ The app is a collab-lab surface (vendored kit: `kit/vendor/`). Its binding:
 2. Channels and the watch loop follow `/session-attach`: `channels.py list`, pick or
    create one, arm `signals.py watch --channel <id> --once` in the background, and
    re-arm with `--include-backlog` after each collect. Alec picks the same channel
-   in the chip at the right of the toolbar.
+   in the chip at the top of the rail's Session tab.
 
 **Read what is on screen** without being sent anything:
 `~/.claude/web-context/mirrors/dag-generator-<slug>/dag.md` (`scratch` for an

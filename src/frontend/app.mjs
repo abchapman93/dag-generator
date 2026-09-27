@@ -64,7 +64,7 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
 
   const canvas = createCanvas($('.dg-canvas-host'), {
     onChange: () => { regenPanels(); status('ok'); renderInspector(canvas.getSelection()); invalidateRevert(); },
-    onSelect: (sel) => renderInspector(sel),
+    onSelect: (sel) => { renderInspector(sel); renderSelChip(); },
     onModeChange: (m) => { $('[data-act=addEdge]').classList.toggle('on', m === 'addEdge'); },
     onStatus: (m, from) => {
       $('.dg-hint').textContent = m === 'addEdge'
@@ -95,11 +95,23 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
     }, 240));
   });
 
-  stage.querySelectorAll('.dg-tab').forEach((t) => t.addEventListener('click', () => {
-    activePanel = t.dataset.panel;
-    stage.querySelectorAll('.dg-tab').forEach((x) => x.setAttribute('aria-selected', x === t));
-    Object.entries(panels).forEach(([k, p]) => p.el.classList.toggle('hidden', k !== activePanel));
-  }));
+  // ---- rail tabs: the three code panels + the session (learning's rail layout) ----
+  const TAB_KEY = 'collab-rail-tab:dag-generator';
+  function showTab(tab) {
+    const session = tab === 'session';
+    stage.querySelectorAll('.dg-rail-tab').forEach((x) => {
+      const on = x.dataset.tab === tab;
+      x.classList.toggle('is-active', on); x.setAttribute('aria-selected', on);
+    });
+    $('.dg-code-body').hidden = session;
+    $('.dg-session').hidden = !session;
+    if (!session) {
+      activePanel = tab;
+      Object.entries(panels).forEach(([k, p]) => p.el.classList.toggle('hidden', k !== activePanel));
+    }
+    try { localStorage.setItem(TAB_KEY, tab); } catch { /* private mode */ }
+  }
+  stage.querySelectorAll('.dg-rail-tab').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
 
   // ---- toolbar ----
   $('[data-act=style]').addEventListener('click', (e) => {
@@ -127,13 +139,13 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
     canvas.setMode(canvas.getMode() === 'addEdge' ? 'select' : 'addEdge');
   });
   $('[data-act=del]').addEventListener('click', () => canvas.deleteSelection());
-  $('[data-act=pointAt]').addEventListener('click', () => pointAt());   // main click: no note
-  $('[data-act=pointAtNote]').addEventListener('click', () => sendFromMenu());
-  $('#pointat-note').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendFromMenu(); } });
-  // Quick replies: one click sends a canned note. With a selection it rides as a
-  // point-at (handles + crop); with nothing selected it's a plain message.
-  $('.dg-pointat-menu').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-qr]'); if (b) sendFromMenu(b.dataset.qr);
+  $('[data-act=pointAt]').addEventListener('click', () => send());
+  $('[data-act=send]').addEventListener('click', () => send());
+  $('#dg-note').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } });
+  // Quick replies: one click sends a canned note, composed with anything typed.
+  // With a selection it rides as a point-at (handles + crop); without, a message.
+  $('.dg-qr').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-qr]'); if (b) send(b.dataset.qr);
   });
   $('[data-act=fit]').addEventListener('click', () => canvas.refit());
   $('[data-act=zoomIn]').addEventListener('click', () => canvas.zoomIn());
@@ -156,13 +168,16 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !isTyping(e)) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || e.key === 'Y') && !isTyping(e)) { e.preventDefault(); redo(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && !isTyping(e)) { e.preventDefault(); canvas.deleteSelection(); }
-    if ((e.key === 'p' || e.key === 'P') && !isTyping(e) && !e.metaKey && !e.ctrlKey) { e.preventDefault(); pointAt(); return; }
+    if ((e.key === 'p' || e.key === 'P') && !isTyping(e) && !e.metaKey && !e.ctrlKey) { e.preventDefault(); send(); return; }
     if (e.key === 'Escape') canvas.setMode('select');
   };
   document.addEventListener('keydown', onKey);
 
   // ---- the rail (kit): width, fold, and the widen-while-a-card-is-open rule ----
-  const rail = mountRail({ host: $('.dg-side'), storageKey: 'collab-rail:dag-generator', label: 'panel', minMain: 420 });
+  const rail = mountRail({ host: $('.dg-side'), storageKey: 'collab-rail:dag-generator', label: 'code · session', width: 400, minMain: 420 });
+  let savedTab = null;
+  try { savedTab = localStorage.getItem(TAB_KEY); } catch { /* private mode */ }
+  showTab(['formula', 'tikz', 'dagitty', 'session'].includes(savedTab) ? savedTab : 'formula');
 
   // ---- configs: save / open / delete ----
   function setCurrent(slug, name) {
@@ -403,15 +418,24 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
     status('ok', null, `${icon} ${what} — ${done}`);
   }
 
-  // The chevron dropdown: send a signal, then clear the field and close the menu.
-  // A quick-reply preset and typed text combine, so a one-click category can carry
+  // The Session tab's send box: one door, the payload decides the kind. A
+  // quick-reply preset and typed text combine, so a one-click category can carry
   // a refinement: "Fix this: color — the leaves should follow provenance".
-  function sendFromMenu(preset) {
-    const inp = $('#pointat-note');
+  function send(preset) {
+    const inp = $('#dg-note');
     const note = [preset, inp.value.trim()].filter(Boolean).join(' — ');
     pointAt(note || undefined);
     inp.value = '';
-    const d = stage.querySelector('.dg-pointat-more'); if (d) d.open = false;
+  }
+
+  // What a send would point at, in the handle grammar the session receives.
+  function renderSelChip() {
+    const chip = $('#dg-sel');
+    const handles = canvas.getSelection().map(handleOf).filter(Boolean);
+    chip.classList.toggle('live', handles.length > 0);
+    chip.textContent = !handles.length
+      ? 'nothing selected — a note alone is a message, empty is a ping'
+      : handles.length === 1 ? handles[0] : `${handles[0]} +${handles.length - 1} more`;
   }
 
   // ---- the collab bus (kit): channel, ask cards, patch cards, point-back ----
@@ -522,7 +546,13 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
     dismiss: true,
     channel: () => picker.getChannel(),
     onStatus: (kind, msg) => status(kind === 'ok' ? 'ok' : 'warn', null, msg),
-    onOpenChange: (open, n) => { rail.setOpen(open); rail.setBadge(n); },
+    onOpenChange: (open, n) => {
+      rail.setOpen(open); rail.setBadge(n);
+      const badge = $('.dg-rail-tab[data-tab=session] .dg-rail-badge');
+      badge.textContent = n || ''; badge.hidden = !n;
+    },
+    // A new card brings the Session tab forward — a card nobody can see is not an ask.
+    onCardsChanged: (added) => { if (added.length) showTab('session'); },
     renderPayload,
     ownsResolution: isPatch,
     interceptAnswer,
@@ -564,13 +594,13 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
   function renderInspector(sel) {
     const box = $('.dg-inspector');
     const items = Array.isArray(sel) ? sel : (sel ? [sel] : []);
-    if (items.length === 0) { box.innerHTML = '<p class="dg-muted">Select a node or edge to edit it. Shift-click / shift-drag to select several, then ⌖ point at all. No selection needed to ✉ send Claude a message (▾) or a one-click ⌖ ping.</p>'; return; }
+    if (items.length === 0) { box.innerHTML = '<p class="dg-muted">Select a node or edge to edit it. Shift-click / shift-drag to select several.</p>'; return; }
     if (items.length > 1) {
       box.innerHTML = `<h4>${items.length} selected</h4>
         <p class="dg-muted">${items.map(handleOf).map(esc).join('<br>')}</p>
         <button class="dg-btn dg-swig-btn" data-act="pointAtAll">⌖ point at all (${items.length})</button>
         <p class="dg-muted">Shift-click to add/remove; ⌖ or press <kbd>p</kbd> to point at them together.</p>`;
-      $('[data-act=pointAtAll]').addEventListener('click', () => pointAt());
+      $('[data-act=pointAtAll]').addEventListener('click', () => send());
       return;
     }
     sel = items[0];
@@ -657,7 +687,7 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
     else el.textContent = `${model.nodes.length} nodes · ${model.edges.length} edges`;
   }
 
-  regenPanels(); renderInspector(null); status('ok');
+  regenPanels(); renderInspector(null); renderSelChip(); status('ok');
   if (config) openConfig(config);
   // destroy() exists for the timers and listeners: as an analysis-room tab this
   // module can be unmounted, and a poll or keydown outliving its stage would keep
@@ -691,27 +721,7 @@ const TEMPLATE = `
     <button class="dg-btn" data-act="addNode">+ node</button>
     <button class="dg-btn" data-act="addEdge">+ edge</button>
     <button class="dg-btn" data-act="del">delete</button>
-    <span class="dg-pointat">
-      <button class="dg-btn dg-pointat-main" data-act="pointAt" title="Signal the running session (p): point at the selection, or — with nothing selected — send a one-click ping">⌖ point at</button>
-      <details class="dg-export dg-pointat-more">
-        <summary class="dg-btn dg-pointat-chevron" title="send with a note / message">▾</summary>
-        <div class="dg-menu dg-pointat-menu">
-          <p class="dg-qr-label">Fix this:</p>
-          <div class="dg-qr-row">
-            <button data-qr="Fix this: position">position</button>
-            <button data-qr="Fix this: text">text</button>
-            <button data-qr="Fix this: color">color</button>
-            <button data-qr="Fix this: shape">shape</button>
-          </div>
-          <div class="dg-qr-row">
-            <button data-qr="Looks good">✓ looks good</button>
-            <button data-qr="Done">done</button>
-          </div>
-          <input id="pointat-note" placeholder="a note on the selection, or a message to Claude…" spellcheck="false">
-          <button data-act="pointAtNote">✉ send</button>
-        </div>
-      </details>
-    </span>
+    <button class="dg-btn" data-act="pointAt" title="Send to the session (p)">⌖ point at</button>
     <button class="dg-btn" data-act="relayout">auto-layout</button>
     <button class="dg-btn dg-revert" data-act="revert" hidden>↶ revert</button>
     <button class="dg-btn" data-act="fit">fit</button>
@@ -741,8 +751,6 @@ const TEMPLATE = `
         <button data-export="json">JSON</button>
       </div>
     </details>
-    <span class="dg-grow"></span>
-    <span class="dg-channel" id="dg-channel"></span>
   </div>
   <div class="dg-body">
     <div class="dg-canvas-wrap">
@@ -755,19 +763,45 @@ const TEMPLATE = `
       </div>
     </div>
     <aside class="dg-side">
-      <div class="dg-side-tabs" role="tablist">
-        <button class="dg-tab" role="tab" data-panel="formula" aria-selected="true">Formula</button>
-        <button class="dg-tab" role="tab" data-panel="tikz" aria-selected="false">TikZ</button>
-        <button class="dg-tab" role="tab" data-panel="dagitty" aria-selected="false">Dagitty</button>
+      <div class="dg-rail-head">
+        <div class="dg-rail-tabs" role="tablist">
+          <button class="dg-rail-tab" role="tab" data-tab="formula">Formula</button>
+          <button class="dg-rail-tab" role="tab" data-tab="tikz">TikZ</button>
+          <button class="dg-rail-tab" role="tab" data-tab="dagitty">Dagitty</button>
+          <button class="dg-rail-tab" role="tab" data-tab="session">Session<span class="dg-rail-badge" hidden></span></button>
+        </div>
       </div>
-      <div class="dg-panels">
-        <textarea id="p-formula" class="dg-code" spellcheck="false"></textarea>
-        <textarea id="p-tikz" class="dg-code hidden" spellcheck="false"></textarea>
-        <textarea id="p-dagitty" class="dg-code hidden" spellcheck="false"></textarea>
+      <div class="dg-rail-body dg-code-body" role="tabpanel">
+        <div class="dg-panels">
+          <textarea id="p-formula" class="dg-code" spellcheck="false"></textarea>
+          <textarea id="p-tikz" class="dg-code hidden" spellcheck="false"></textarea>
+          <textarea id="p-dagitty" class="dg-code hidden" spellcheck="false"></textarea>
+        </div>
+        <div class="dg-inspector"></div>
+      </div>
+      <div class="dg-rail-body dg-session" role="tabpanel" hidden>
+        <div class="dg-channel" id="dg-channel"></div>
+        <div class="dg-send">
+          <p class="dg-section-label">Send to Claude</p>
+          <p class="dg-sel" id="dg-sel"></p>
+          <textarea id="dg-note" rows="2" placeholder="a note on the selection, or a message to Claude…" spellcheck="false"></textarea>
+          <div class="dg-send-row">
+            <button class="dg-btn dg-btn-accent" data-act="send" title="⌘Enter">⌖ send</button>
+          </div>
+          <div class="dg-qr">
+            <span class="dg-qr-label">Fix this:</span>
+            <button data-qr="Fix this: position">position</button>
+            <button data-qr="Fix this: text">text</button>
+            <button data-qr="Fix this: color">color</button>
+            <button data-qr="Fix this: shape">shape</button>
+            <span class="dg-qr-gap"></span>
+            <button data-qr="Looks good">✓ looks good</button>
+            <button data-qr="Done">done</button>
+          </div>
+        </div>
+        <div class="ck-asks dg-asks" hidden></div>
       </div>
       <div class="dg-status ok"></div>
-      <div class="dg-inspector"></div>
-      <div class="ck-asks dg-asks" hidden></div>
     </aside>
   </div>
 </div>`;

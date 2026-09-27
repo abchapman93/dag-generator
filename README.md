@@ -70,11 +70,13 @@ tikz ────┘     (src/engine)             └─ pdf/svg/png   (LaTeX co
 The app is a surface on the collab-lab bus (`~/.claude/web-context/`), built on
 the vendored kit:
 
-- **⌖ point at** (or `p`) sends the selection to the session as `@node:`/`@edge:`
-  handles plus a PNG crop; `▾` adds a note or a quick reply; nothing selected sends
-  a message or a ping. The **channel chip** at the right of the toolbar scopes all
-  of it to one session.
-- **Cards** from the session appear in the rail (which widens while one is open):
+- The rail's **Session** tab holds the channel chip (scopes everything to one
+  session), a send box (selection chip, note, ⌖ send or ⌘Enter, quick replies) and
+  the cards. A selection goes as `@node:`/`@edge:` handles plus a PNG crop; a note
+  alone is a message; an empty send is a ping. **⌖ point at** in the toolbar (or
+  `p`) sends the same thing without switching tabs.
+- **Cards** from the session appear under the send box (the rail widens and
+  switches to Session when one arrives):
   questions, **patch cards** (a suggested change — ops, a preview, Accept/Reject;
   Accept is one undo step), and **Show me** buttons where the session points at
   nodes or edges. ✕ dismisses a card without telling the session anything.
