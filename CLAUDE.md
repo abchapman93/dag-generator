@@ -13,8 +13,8 @@ npm test       # vitest: engine round-trips + LaTeX compile pipeline
 ## Architecture invariants (don't break these)
 
 - **`src/engine/` stays pure** — no DOM, no Express, no node-only APIs. It is
-  imported directly in the browser (`/engine/*.mjs`) AND by the CLI/server. Only
-  `src/server/compile.mjs` may use `child_process`/`fs`.
+  imported directly in the browser (`/engine/*.mjs`) AND by the CLI/server. Node
+  APIs (`child_process`, `fs`) live only in `src/server/` and `src/cli/`.
 - **The canonical TikZ grammar is the round-trip contract.** `tikz.emit` and
   `tikz.parse` must stay inverses over the documented grammar (one `\node`/`\draw`
   per line, absolute grid coords, explicit bends). Anything off-grammar is FLAGGED
@@ -23,6 +23,17 @@ npm test       # vitest: engine round-trips + LaTeX compile pipeline
   round-trip; `node.role` is optional semantic metadata for informal colors.
 - **Grid-snapped layout.** Node coordinates are integers; the layout engine and
   the canvas both snap to the grid.
+
+## Collab kit (vendored)
+
+- `kit/vendor/` is a byte-identical copy of `~/Code/collab-lab/kit` (manifest in
+  `kit/sync-vendor.mjs`). **Never edit it here** — change the kit upstream, then
+  `npm run sync-kit`. `npm test` fails on drift.
+- The bus binding: handles `@node:`/`@edge:` (`src/engine/handles.mjs`), kinds
+  `dag-generator-*`, target `dag-generator`. Claude reaches Alec's DAG only through
+  a `dag-patch` card he accepts (`POST /dag/api/suggestions/:id/resolve` validates;
+  the page applies); a session's own writes go to `claude-*` configs only, and
+  stop once Alec edits one.
 
 ## Research-lounge compatibility
 

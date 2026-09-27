@@ -108,3 +108,15 @@ of the figure (green=Antibiotics / red=No antibiotics key; and the Severity | Vi
 Comorbidities | Decision column headers). The engine has NO out-of-graph annotation
 primitive today — legends/headers can only be faked as floating labelled nodes.
 Deferred by Alec 2026-07-24; revisit with A/B/C.
+
+## Auto-layout hides edges behind collinear chains
+
+**Added 2026-09-27**, from the collab-kit migration (a `dag draft` of
+`Y ~ A + M + L, M ~ A + L, A ~ L` laid out as one row `L A M Y`, so `L → Y`,
+`A → Y` and `L → M` ran straight through the nodes between them). The same
+complaint is why collab-lab's whiteboard does its own layout
+(`apps/whiteboard/shared/dag-layout.mjs`). `layout.mjs` layers by depth and snaps
+to the grid but never checks whether an edge passes through a node. Candidate
+fix: after layering, bend (or nudge a row for) any straight edge whose segment
+hits another node's cell — the same `onSegment` test `patch.mjs` now uses to
+place new nodes.

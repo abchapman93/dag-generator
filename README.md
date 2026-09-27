@@ -12,8 +12,9 @@ Built as a Claude Code skill **and** a standalone web app, designed to plug into
 
 ```bash
 npm install
-npm test          # engine + compile pipeline (22+ tests)
+npm test          # engine, server, compile pipeline + the kit drift check
 npm run dev       # web app at http://127.0.0.1:4180/
+npm run sync-kit  # re-vendor the collab kit after it changes upstream
 ```
 
 CLI:
@@ -37,8 +38,11 @@ tikz ────┘     (src/engine)             └─ pdf/svg/png   (LaTeX co
 
 - **`src/engine/`** — pure, dependency-free, browser-importable: `model`,
   `formula`, `dagitty`, `tikz` (round-trippable), `layout`, `svg`, `html`, `swig`.
-- **`src/server/`** — Express router + LaTeX compile pipeline
-  (`latexmk` → `dvisvgm`/`pdftoppm`; degrades to `.tex`-only if TeX is absent).
+- **`src/server/`** — `app.mjs` (factory) + `router.mjs` (`/dag/api/*`): LaTeX
+  compile (`latexmk` → `dvisvgm`/`pdftoppm`; degrades to `.tex`-only if TeX is
+  absent), the saved-DAG registry, the bus mirror, and the collab bus routes.
+- **`kit/`** — the collab-lab kit, vendored (`kit/vendor/`, never edited here;
+  `npm run sync-kit` re-copies it and `kit/kit-drift.test.mjs` fails on drift).
 - **`src/frontend/`** — vanilla-JS app; imports the engine directly in the
   browser; constrained two-way editing (grid canvas ↔ canonical TikZ ↔ formula).
 - **`src/cli/dag.mjs`** — deterministic CLI used by the skill.
@@ -60,6 +64,26 @@ tikz ────┘     (src/engine)             └─ pdf/svg/png   (LaTeX co
   blank DAG, Delete/Backspace removes the selection. History is per-DAG and
   coalesces rapid bursts (e.g. a drag) into one step; text-field edits keep native
   undo. (Note: some browsers reserve ⌘N for "new window".)
+
+## Working with a Claude session (collab-lab surface)
+
+The app is a surface on the collab-lab bus (`~/.claude/web-context/`), built on
+the vendored kit:
+
+- **⌖ point at** (or `p`) sends the selection to the session as `@node:`/`@edge:`
+  handles plus a PNG crop; `▾` adds a note or a quick reply; nothing selected sends
+  a message or a ping. The **channel chip** at the right of the toolbar scopes all
+  of it to one session.
+- **Cards** from the session appear in the rail (which widens while one is open):
+  questions, **patch cards** (a suggested change — ops, a preview, Accept/Reject;
+  Accept is one undo step), and **Show me** buttons where the session points at
+  nodes or edges. ✕ dismisses a card without telling the session anything.
+- **Claude drafts** show a *Claude* badge in `configs ▾`; editing one makes it yours.
+- The open DAG is mirrored to `~/.claude/web-context/mirrors/dag-generator-<slug>/`
+  for sessions to read.
+
+Session side: `dag open`, `dag draft`, `dag suggest` (see `dag help` and the
+skill's Path C).
 
 ## Two-way editing
 
