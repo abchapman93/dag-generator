@@ -17,5 +17,20 @@
   const config = new URLSearchParams(location.search).get('config');
   mount({ stage: document.getElementById('dg-stage'), config });
 </script>
+<script>
+// A Home Screen shortcut runs full screen with no browser back button: offer a way back to the Hub.
+(function () {
+  if (window.top !== window) return;
+  if (!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches))) return;
+  var a = document.createElement('a');
+  a.href = 'https://' + location.hostname + ':4710/';
+  a.textContent = '\u2039 Hub';
+  a.setAttribute('aria-label', 'Back to Hub');
+  a.style.cssText = 'position:fixed;left:0;bottom:calc(env(safe-area-inset-bottom,0px) + 96px);z-index:2147483647;' +
+    'padding:10px 14px 10px 10px;border-radius:0 22px 22px 0;background:rgba(30,41,59,.82);color:#fff;' +
+    'font:600 15px/1 -apple-system,BlinkMacSystemFont,sans-serif;text-decoration:none;';
+  document.body.appendChild(a);
+})();
+</script>
 </body>
 </html>
