@@ -22,6 +22,8 @@
 (function () {
   if (window.top !== window) return;
   if (!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches))) return;
+  // Desktop web apps (Safari Dock, Chrome) count as standalone too but have their own buttons.
+  if (!matchMedia('(hover: none)').matches) return;
   var a = document.createElement('a');
   a.href = 'https://' + location.hostname + ':4710/';
   a.textContent = '\u2039 Hub';
