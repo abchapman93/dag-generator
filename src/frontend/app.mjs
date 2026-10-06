@@ -713,6 +713,7 @@ function downloadBlob(name, blob) { const u = URL.createObjectURL(blob); const a
 const TEMPLATE = `
 <div class="dg-app">
   <div class="dg-toolbar">
+    <a class="dg-btn dg-home" href="https://${location.hostname}:4710/" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-6.5 8 6.5M6 9.5V19.5h4.5v-5h3v5H18V9.5"/></svg></a>
     <strong class="dg-brand">dag-generator</strong>
     <span class="dg-current" id="dg-current"></span>
     <button class="dg-btn" data-act="style">Style: Informal</button>

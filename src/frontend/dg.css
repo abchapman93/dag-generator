@@ -13,6 +13,8 @@ body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
 
 .dg-app{display:flex;flex-direction:column;height:100vh}
 .dg-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--dg-line);flex-wrap:wrap}
+.dg-home{display:inline-flex;align-items:center;padding:5px 7px}
+.dg-home svg{width:18px;height:18px}
 .dg-brand{font-size:15px;font-weight:650;color:var(--dg-accent-ink);margin-right:4px}
 .dg-sep{width:1px;height:20px;background:var(--dg-line);margin:0 2px}
 .dg-grow{flex:1}
