@@ -13,6 +13,7 @@ import { intervene } from '/engine/swig.mjs';
 import { NODE_STYLES, EDGE_STYLES, ROLES, cloneModel } from '/engine/model.mjs';
 import { formatHandle } from '/engine/handles.mjs';
 import { applyPatch, describeOps, touchedHandles } from '/engine/patch.mjs';
+import { carryOver, FORMULA, DAGITTY } from '/engine/merge.mjs';
 import { mountAskCards } from '/kit/ask-cards.mjs';
 import { mountRail } from '/kit/rail.mjs';
 import { mountChannelPicker } from '/kit/channel-picker.mjs';
@@ -58,6 +59,7 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
   let loading = false, autosaveTimer = null; // autosave-to-current-config state
   let undoStack = [], redoStack = [], lastSnapshot = JSON.stringify(model), lastRecordTime = 0;
   let currentTimer = null;                   // debounced "what's on screen" report (mirror)
+  const dropped = new Map();                 // what text edits removed from this DAG, so it returns where it was
 
   function showRevert(on) { const b = $('[data-act=revert]'); if (b) b.hidden = !on; }
   function invalidateRevert() { if (preLayout) { preLayout = null; showRevert(false); } }
@@ -77,9 +79,9 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
 
   // ---- code panels (Formula | TikZ | Dagitty) ----
   const panels = {
-    formula: { el: $('#p-formula'), emit: () => formula.emit(model), parse: (t) => { const r = formula.parse(t); layout(r.model); return { model: r.model, flags: r.flags, refit: true }; } },
+    formula: { el: $('#p-formula'), emit: () => formula.emit(model), parse: (t) => { const r = formula.parse(t); carryOver(model, r.model, { ...FORMULA, memory: dropped }); return { model: r.model, flags: r.flags, refit: true }; } },
     tikz: { el: $('#p-tikz'), emit: () => tikz.emit(model, { wrap: 'picture' }), parse: (t) => { const r = tikz.parse(t); const noCoords = r.model.nodes.every((n) => n.x === 0 && n.y === 0); if (noCoords) layout(r.model); return { model: r.model, flags: r.flags, refit: noCoords }; } },
-    dagitty: { el: $('#p-dagitty'), emit: () => dagitty.emit(model), parse: (t) => { const r = dagitty.parse(t); const noCoords = r.model.nodes.every((n) => n.x === 0 && n.y === 0); if (noCoords) layout(r.model); return { model: r.model, flags: r.flags, refit: true }; } },
+    dagitty: { el: $('#p-dagitty'), emit: () => dagitty.emit(model), parse: (t) => { const r = dagitty.parse(t); carryOver(model, r.model, { ...DAGITTY, placed: r.placed, memory: dropped }); return { model: r.model, flags: r.flags, refit: true }; } },
   };
   let activePanel = 'formula';
 
@@ -281,7 +283,7 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
     try {
       const cfg = await (await fetch(`${apiBase}/configs/${encodeURIComponent(slug)}`)).json();
       await flushAutosave();   // persist pending edits to the config we're leaving
-      loading = true;
+      loading = true; dropped.clear();
       model = cfg.model;
       renderStyle = model.meta?.style || 'informal';
       swigStyle = model.meta?.swigStyle || 'superscript';
@@ -306,7 +308,7 @@ export function mount({ stage, apiBase = '/dag/api', config = null }) {
     // Only warn when there's untitled work to lose; open configs are auto-saved.
     if (model.nodes.length && !currentSlug && !confirm('Start a new blank DAG? Unsaved changes will be cleared.')) return;
     await flushAutosave();   // persist the config we're leaving, if any
-    loading = true;
+    loading = true; dropped.clear();
     model = { meta: { kind: 'dag', style: renderStyle, swigStyle, title: '', nodeSep: 1 }, nodes: [], edges: [] };
     setCurrent(null, ''); $('#cfg-name').value = '';
     canvas.setModel(model, { refit: true });

@@ -27,6 +27,7 @@ export function parse(text) {
   const model = emptyModel({ meta: { style: 'informal' } });
   const flags = [];
   const nodeMap = new Map();
+  const placed = new Set();   // ids whose pos the text states
 
   const ensure = (id) => {
     if (!nodeMap.has(id)) {
@@ -76,21 +77,23 @@ export function parse(text) {
     const nodeM = new RegExp(`^(${ID})\\s*(\\[(.*)\\])?$`).exec(line);
     if (nodeM) {
       const n = ensure(nodeM[1]);
-      if (nodeM[3] != null) applyAttrs(n, nodeM[3], flags, i + 1);
+      if (nodeM[3] != null && applyAttrs(n, nodeM[3], flags, i + 1)) placed.add(n.id);
       return;
     }
     flags.push({ line: i + 1, why: `could not parse '${line}'` });
   });
 
-  return { model, flags };
+  return { model, flags, placed };
 }
 
+// -> true when the attributes state a position.
 function applyAttrs(node, attrStr, flags, lineNo) {
+  let hasPos = false;
   // Split on commas that are not inside quotes.
   const attrs = attrStr.match(/(?:[^,"]|"[^"]*")+/g) || [];
   for (const a of attrs.map((s) => s.trim()).filter(Boolean)) {
     const posM = /^pos\s*=\s*"?\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*"?$/.exec(a);
-    if (posM) { node.x = parseFloat(posM[1]); node.y = parseFloat(posM[2]); continue; }
+    if (posM) { node.x = parseFloat(posM[1]); node.y = parseFloat(posM[2]); hasPos = true; continue; }
     switch (a.toLowerCase()) {
       case 'exposure': node.role = 'exposure'; break;
       case 'outcome': node.role = 'outcome'; break;
@@ -101,6 +104,7 @@ function applyAttrs(node, attrStr, flags, lineNo) {
       default: flags.push({ line: lineNo, why: `unknown attribute '${a}'` });
     }
   }
+  return hasPos;
 }
 
 export function emit(model) {
