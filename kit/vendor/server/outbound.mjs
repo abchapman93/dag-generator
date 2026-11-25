@@ -300,5 +300,5 @@ export function createOutbound({ webContext } = {}) {
     return ask;
   }
 
-  return { listAsks, listAllAsks, getAsk, answerAsk, retractAsk, dismissAsk, statusOf };
+  return { dir, listAsks, listAllAsks, getAsk, answerAsk, retractAsk, dismissAsk, statusOf };
 }

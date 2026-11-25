@@ -45,6 +45,11 @@
 //                                 // `comment` button beside the input. Opt-in, because a
 //                                 // surface whose server stamps on any in_reply_to would
 //                                 // otherwise resurrect the decoy it just removed.
+//   askClaude: { label, placeholder, sendLabel },
+//                                 // optional, with onComment: put that comment action on
+//                                 // EVERY card under this label, on its own row, even a
+//                                 // card that takes no free text. Enter sends it, never
+//                                 // the answer. `sendLabel` renames the generic send.
 //   dismiss,                      // optional: put a ✕ on every card — "clear this,
 //                                 // I'm not answering it". `true` posts to
 //                                 // `${basePath}/asks/<id>/dismiss`; a FUNCTION
@@ -61,6 +66,9 @@
 //                                 // getChannel) so a mid-session switch takes effect on the
 //                                 // next poll without remounting. Rides on the answer POST
 //                                 // too, so the answer signal lands on the same feed.
+//   order(asks) -> asks,          // optional: the order to paint them in (the server's
+//                                 // is newest first). Runs on every poll, so call poll()
+//                                 // after changing what it depends on.
 //   pollMs,                       // default 2000
 // }) -> { refresh, destroy }
 
@@ -311,7 +319,7 @@ export function diffWordsHtml(before, after) {
     : `${h.del ? `<del>${esc(h.del)}</del>` : ''}${h.ins ? `<ins>${esc(h.ins)}</ins>` : ''}`)).join('');
 }
 
-export function mountAskCards({ container, target, basePath, onStatus = () => {}, onOpenChange = () => {}, onCardsChanged = null, renderPayload = null, interceptAnswer = null, ownsResolution = null, onComment = null, dismiss: dismissOpt = null, renderMath = null, channel = null, pollMs = 2000 }) {
+export function mountAskCards({ container, target, basePath, onStatus = () => {}, onOpenChange = () => {}, onCardsChanged = null, renderPayload = null, interceptAnswer = null, ownsResolution = null, onComment = null, askClaude = null, dismiss: dismissOpt = null, renderMath = null, channel = null, order = null, pollMs = 2000 }) {
   const currentChannel = () => (typeof channel === 'function' ? channel() : channel) || null;
   // ids currently on screen; skips repaints that would wipe half-typed free
   // text under the cursor. null (not '') means "repaint regardless" — '' is the
@@ -330,6 +338,7 @@ export function mountAskCards({ container, target, basePath, onStatus = () => {}
       if (!res.ok) return;
       asks = await res.json();
     } catch { return; }   // no server (static/embedded) — the channel is simply off
+    if (order) asks = order(asks);
     const sig = asks.map((a) => a.ask_id).join(',');
     if (sig === rendered) return;
     rendered = sig;
@@ -424,7 +433,13 @@ export function mountAskCards({ container, target, basePath, onStatus = () => {}
             ${o.image ? `<img src="${esc(o.image)}" alt="">` : ''}
             <span>${withRichText(o.label, renderMath)}</span>
           </button>`).join('')}</div>` : ''}
-        ${a.allow_free_text ? `<div class="ck-ask-free">
+        ${onComment && askClaude ? `<div class="ck-ask-free ck-ask-free-stacked">
+          <input class="ck-ask-text" placeholder="${esc(askClaude.placeholder || '')}" spellcheck="false">
+          <div class="ck-ask-free-btns">
+            <button class="ck-ask-comment">${esc(askClaude.label)}</button>
+            ${!ownActions && a.allow_free_text ? `<button class="ck-ask-send" data-opt="" data-label="">${esc(askClaude.sendLabel || 'send')}</button>` : ''}
+          </div>
+        </div>` : a.allow_free_text ? `<div class="ck-ask-free">
           <input class="ck-ask-text" placeholder="${ownActions ? (onComment ? 'a note — rides with your choice, or comment on its own…' : 'add a note — sent with your choice…') : a.options.length ? 'or answer in your own words…' : 'your answer…'}" spellcheck="false">
           ${ownActions
             ? (onComment ? `<button class="ck-ask-comment">comment</button>` : '')
@@ -539,5 +554,14 @@ export function mountAskCards({ container, target, basePath, onStatus = () => {}
   // `dismiss` is exposed as well as bound to the ✕ because a surface can list
   // cards the panel isn't rendering — learning's tail of asks belonging to
   // another subject — and those rows need the same door, not a second one.
-  return { refresh: () => { rendered = null; return poll(); }, dismiss: dismissAsk, destroy: () => { clearInterval(timer); timer = null; listening.abort(); } };
+  // `poll` is the diff-skipping look (what a push nudge wants: a half-typed
+  // answer survives it); `refresh` forces the repaint.
+  live.add(poll);
+  return { poll, refresh: () => { rendered = null; return poll(); }, dismiss: dismissAsk, destroy: () => { live.delete(poll); clearInterval(timer); timer = null; listening.abort(); } };
 }
+
+// Every card list mounted on this page, so a push nudge (kit/frontend/events.mjs)
+// can look in all of them — the top-level feed and an open thread's — without
+// the host keeping its own registry.
+const live = new Set();
+export function pollAllCards() { for (const poll of live) poll(); }

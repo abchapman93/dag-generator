@@ -76,5 +76,8 @@
 /* Comment — talking about a card without resolving it. Deliberately quieter
    than send: send IS the answer, comment is a remark beside one, and it must
    not read as the way to finish with the card. */
+.ck-ask-free-stacked{flex-direction:column}
+.ck-ask-free-stacked .ck-ask-text{flex:none}
+.ck-ask-free-btns{display:flex;justify-content:flex-end;gap:5px}
 .ck-ask-comment{font:inherit;font-size:12.5px;padding:6px 10px;border:1px solid var(--ck-line,#ddd);border-radius:7px;background:#fff;color:var(--ck-accent-ink,#1d5c3a);cursor:pointer}
 .ck-ask-comment:hover{border-color:var(--ck-accent,#2f7d5a)}

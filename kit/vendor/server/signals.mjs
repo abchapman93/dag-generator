@@ -80,6 +80,20 @@ function oneTitle({ handle, label, kind }) {
   return [handle, ...meta].filter(Boolean).join(' ');
 }
 
+// What the human typed on top of a card's chosen option. The card UI composes
+// `${label} — ${typed}` into one note; this peels the label back off. A note
+// that is exactly a label (or none) typed nothing.
+export function typedNoteOf(ask, note) {
+  const text = String(note ?? '').trim();
+  for (const o of ask?.options || []) {
+    const label = String(o.label ?? '').trim();
+    if (!label) continue;
+    if (text === label) return '';
+    if (text.startsWith(`${label} — `)) return text.slice(label.length + 3).trim();
+  }
+  return text;
+}
+
 export function createSignalWriter({ surface, webContext, defaultSource, cwdHint, contractUrl, stateUrl } = {}) {
   if (!surface || !/^[a-z0-9-]+$/.test(surface)) throw new Error('surface slug is required (e.g. "editor")');
   const base = webContext || process.env.COLLAB_WEBCTX || join(homedir(), '.claude', 'web-context');
@@ -187,5 +201,15 @@ export function createSignalWriter({ surface, webContext, defaultSource, cwdHint
     return { signal_id: signalId, kind, handles: list.map((h) => h.handle), title: signal.title, context_path: contextPath, note_path: notePath, note, in_reply_to: replyTo, channel: signal.channel };
   }
 
-  return { emitSignal };
+  // A card's accept/reject is bookkeeping: the ask file is stamped answered and
+  // the change is visible in the document, so a listening session needs no
+  // wake-up for it. Only a human-typed note (or `force`, for an edit-before-
+  // accept that the document alone doesn't explain) is worth a signal.
+  // Returns the receipt, or null when it stayed silent.
+  async function emitCardOutcome({ userNote, force = false, ...rest } = {}) {
+    if (!force && !String(userNote ?? '').trim()) return null;
+    return emitSignal(rest);
+  }
+
+  return { emitSignal, emitCardOutcome };
 }
